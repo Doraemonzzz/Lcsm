@@ -43,27 +43,35 @@ $$
 
 受到RNN的启发，我们通过memory进行序列映射的构造：
 
+(old version)
 - memory $\mathbf m_t \in \mathbb R^{d\times e}$；
 - forget gate $\mathbf f_t \in \mathbb R^{d\times e}$;
 - input gate $\mathbf i_t \in \mathbb R^{e}$;
 - input state $\mathbf u_t \in \mathbb R^{d}$;
 - output gate $\mathbf o_t \in \mathbb R^{e}$;
 
+(new version)
+- memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
+- forget state $\mathbf f_t \in \mathbb R^{k\times d}$;
+- expand state $\mathbf e_t \in \mathbb R^{k}$;
+- input state $\mathbf i_t \in \mathbb R^{d}$;
+- shrink state $\mathbf s_t \in \mathbb R^{k}$;
+
 在每个时刻$t$：
 
-input和input gate利用映射$f_1: \mathbb R^{e}\times \mathbb R^d \to \mathbb R^{d\times e}$得到新的memory $\bar {\mathbf m}_t=f_1(\mathbf i_t, \mathbf u_t)$；
+input state和expand state利用外积映射$f: \mathbb R^{k}\times \mathbb R^d \to \mathbb R^{k\times d}$得到新的memory $\bar {\mathbf m}_t=f_1(\mathbf e_t, \mathbf i_t)=\mathbf e_t^\top \mathbf i_t$；
 
-然后利用下式进行更新（$\mathbf m_0$初始化为$\mathbf 0\in \mathbb R^{d\times e}$）：
+然后利用下式进行更新（$\mathbf m_0$初始化为$\mathbf 0\in \mathbb R^{k\times d}$）：
 $$
-\mathbf m_{t}=f_2(\mathbf f_t, \mathbf m_{t-1}) + \bar {\mathbf m}_t.
+\mathbf m_{t}=\mathbf f_t \odot \mathbf m_{t-1} + \mathbf e_t^\top \mathbf i_t.
 $$
-其中$f_2$为映射$\mathbb R^{d\times e}\times  \mathbb R^{d\times e} \to \mathbb R^{d\times e}$.
+其中$\odot$是逐元素乘。
 
-最后output gate通过dot product从memory中得到最终的输出$\mathbf y_t$:
+最后output state通过dot product从memory中得到最终的输出$\mathbf y_t$:
 $$
-\mathbf y_t =\mathbf m_t^{\top} \mathbf o_t  \in \mathbb R^d.
+\mathbf y_t =\mathbf m_t^{\top} \mathbf s_t  \in \mathbb R^d.
 $$
-forget gate，input gate, input state, output gate都是通过$\mathbf  x_t$计算得到。
+forget state, input state, expand state, shrink state都是通过$\mathbf  x_t$计算得到(或者不依赖于$\mathbf x_t$)。
 
 为了方便后续讨论，我们暂且将该方法记为MNet（Memory Network).
 
@@ -73,9 +81,9 @@ forget gate，input gate, input state, output gate都是通过$\mathbf  x_t$计�
 
 上述的定义看起来有点古怪（但思路和普通的RNN也没什么区别？），在这节中，我们将指出上述定义包含了很多被广泛使用的序列建模方式，我们将各个元素的对应关系列在下表中：
 
-| method           | output gate                    | forget gate                                    | input gate                      | input state                     | memory size  | $f_1$       | $f_2$                   |
+| method           | shrink state                    | forget state                                    | expand state                      | input state                     | memory size  | $f_1$       | $f_2$                   |
 | ---------------- | ------------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------- | ------------ | ----------- | ----------------------- |
-| Linear Attention | $\mathbf q_t\in \mathbb R^{e}$ | $\mathbf I_e\in \mathbb R^{d\times d}$         | $\mathbf k_t \in \mathbb R^{e}$ | $\mathbf v_t \in \mathbb R^{d}$ | $d\times e$  | out product | matrix production       |
+| Linear Attention | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf I_e\in \mathbb R^{d\times d}$         | $\mathbf k_t \in \mathbb R^{e}$ | $\mathbf v_t \in \mathbb R^{d}$ | $d\times e$  | out product | matrix production       |
 | S4               | $\mathbf C\in \mathbb R^ e $   | $\mathbf A\in \mathbb R^{e\times e}$           | $\mathbf B\in \mathbb R^{e}$    | $\mathbb u_t \in \mathbb R^1$   | $1\times e$  | out product | matrix production       |
 | S5               | $\mathbf C\in \mathbb R^ e $   | $\mathbf A\in \mathbb R^{e\times e}$           | $\mathbf B\in \mathbb R^{e}$    | $\mathbb u_t \in \mathbb R^d$   | $d \times e$ | out product | matrix production       |
 | TNL              | $\mathbf q_t\in \mathbb R^{e}$ | $\mathbf \lambda I_e\in \mathbb R^{d\times d}$ | $\mathbf k_t \in \mathbb R^{e}$ | $\mathbf v_t \in \mathbb R^{d}$ | $d\times e$  | out product | matrix production       |
