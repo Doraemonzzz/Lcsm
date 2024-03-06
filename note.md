@@ -51,25 +51,27 @@ We will only consider causal mapping in the following text.
 
 Inspired by RNN, we construct sequence mapping using memory:
 
-### (Old Version)
+(old version, for reference)
 
-- Memory $ \mathbf{m}_t \in \mathbb{R}^{d \times e} $
-- Forget gate $ \mathbf{f}_t \in \mathbb{R}^{d \times e} $
-- Input gate $ \mathbf{i}_t \in \mathbb{R}^{e} $
-- Input state $ \mathbf{u}_t \in \mathbb{R}^{d} $
-- Output gate $ \mathbf{o}_t \in \mathbb{R}^{e} $
+- memory $\mathbf m_t \in \mathbb R^{k\times d}$；
+- forget gate $\mathbf f_t \in \mathbb R^{k\times ?}$;
+- input gate $\mathbf i_t \in \mathbb R^{k}$;
+- input state $\mathbf u_t \in \mathbb R^{d}$;
+- output gate $\mathbf o_t \in \mathbb R^{d}$;
 
-### (New Version)
+(new version)
 
-- Memory state $ \mathbf{m}_t \in \mathbb{R}^{k \times d} $
-- Forget state $ \mathbf{f}_t \in \mathbb{R}^{k \times ?} $
-- Expand state $ \mathbf{e}_t \in \mathbb{R}^{k} $
-- Input state $ \mathbf{i}_t \in \mathbb{R}^{d} $
-- Shrink state $ \mathbf{s}_t \in \mathbb{R}^{k} $
+- memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
+- forget state $\mathbf f_t \in \mathbb R^{k\times ？}$;
+  - may be shock gate?
+
+- expand state $\mathbf e_t \in \mathbb R^{k}$;
+- input state $\mathbf i_t \in \mathbb R^{d}$;
+- shrink state $\mathbf s_t \in \mathbb R^{k}$;
 
 At each time $ t $:
 
-Input state and expand state are used to calculate the new memory $ \bar{\mathbf{m}}_t = \mathbf{e}_t^\top \mathbf{i}_t $;
+Input state and expand state are used to calculate the new memory $ \bar{\mathbf{m}}_t = \mathbf{e}_t \mathbf{i}_t ^\top$;
 
 Then update using the following equation ($ \mathbf{m}_0 $ is initialized to $ \mathbf{0} \in \mathbb{R}^{k \times d} $):
 
@@ -99,7 +101,7 @@ The above definitions may seem a bit peculiar (but the idea is not much differen
 | S4               | $\mathbf C\in \mathbb R^ k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^1$   | $k\times 1$  | Matrix Production       |
 | S5               | $\mathbf C\in \mathbb R^k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^d$   | $k \times d$ | Matrix Production       |
 | TNL              | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf \lambda \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | Matrix Production       |
-| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times e$  | Element-wise Production |
+| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times d$  | Element-wise Production |
 | RWKV | $\mathbf R_t \in \mathbb R^1$ | $\exp(-w ) \in \mathbb R^{1\times 1}$ | $\exp(\mathbf k_t) \in \mathbb R^{1}$ | $\mathbf v_t \mathbf \in \mathbb R^1$ | $1\times 1$ | Element-wise Production / Matrix  Production |
 | Cosformer | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\theta) \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | Matrix Production |
 | Lrpe | $\mathbf q_t\in \mathbb R^{k}$ | $\Lambda =\mathrm{diag}\{\exp(i\theta_1),\ldots, \exp(i\theta_k) \}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | Matrix Production |
@@ -164,7 +166,7 @@ $$
 \mathbf{y}_t=\mathbf{m}_t^{\top} \mathbf{C_t} .
 $$
 
-## RWKV
+## RWKV [6]
 
 If we ignore the denominator of RWKV, the recurrence equation can be simplified to:
 $$
@@ -180,7 +182,7 @@ That is, define an RWKV for each channel.
 
 
 
-## Cosformer
+## Cosformer [7]
 
 In Cosformer, we obtain query $ \mathbf q_t \in \mathbb{R}^{k} $, key $ \mathbf k_t \in \mathbb{R}^{k} $, value $ \mathbf v_t \in \mathbb{R}^{d} $ from the input $ \mathbf x_t \in \mathbb{R}^{d} $, and recursively calculate as follows:
 $$
@@ -190,8 +192,8 @@ $$
 Proof:
 $$
 \begin{aligned}
-\mathrm{Rel}\{[\mathbf {kv}_t] \}&= \sum_{s=1}^t \exp(i (t-s) \theta)\mathbf k_s\mathbf  v_s^\top \\
-\mathbf y_t&= \mathrm{Rel}\{[\mathbf {kv}_t] \}^{\top} \mathbf q_t \\
+{[\mathbf {kv}]_t }&= \sum_{s=1}^t \exp(i (t-s) \theta)\mathbf k_s\mathbf  v_s^\top \\
+\mathbf y_t&= \mathrm{Rel}\{[\mathbf {kv}]_t \}^{\top} \mathbf q_t \\
 &= \mathrm{Rel}\left\{
 \sum_{s=1}^t \exp(i (t-s) \theta)\mathbf v_s \mathbf  k_s ^\top\mathbf q_t
 \right\} \\
@@ -203,7 +205,7 @@ $$
 
 
 
-## Lrpe
+## Lrpe [8]
 
 In Lrpe, we obtain query $ \mathbf q_t \in \mathbb{R}^{k} $, key $ \mathbf k_t \in \mathbb{R}^{k} $, value $ \mathbf v_t \in \mathbb{R}^{d} $ from the input $ \mathbf x_t \in \mathbb{R}^{d} $, and recursively calculate as follows:
 $$
@@ -214,22 +216,22 @@ $$
 Explanation:
 $$
 \begin{aligned}
-\mathrm{Rel}\{[\mathbf {kv}_t] \}&= \sum_{s=1}^t \Lambda^{t-s}\mathbf k_s\mathbf  v_s^\top \\
+{[\mathbf {kv}]_t } &= \sum_{s=1}^t \Lambda^{t-s}\mathbf k_s\mathbf  v_s^\top \\
 \mathbf y_t&= \mathrm{Rel}\{[\mathbf {kv}_t] \}^{\top} \mathbf q_t \\
 &= \mathrm{Rel}\left\{
 \sum_{s=1}^t \Lambda^{t-s}\mathbf v_s \mathbf  k_s ^\top\mathbf q_t
 \right\} \\
 &=
-\sum_{s=1}^t \mathbf v_s \mathbf  k_s ^\top \Lambda_{t-s}\mathbf q_t
+\sum_{s=1}^t \mathbf v_s \mathbf  k_s ^\top \bar \Lambda_{t-s}\mathbf q_t
  \\
-  \Lambda_{t-s}&= \mathrm{diag}\{\cos((t-s)\theta_1),\ldots, \cos((t-s)\theta_k) \}
+ \bar  \Lambda_{t-s}&= \mathrm{diag}\{\cos((t-s)\theta_1),\ldots, \cos((t-s)\theta_k) \}
 \end{aligned}
 $$
 
 
 # Backward
 
-Now that we have defined the Forward form of Mnet, the next step is to define the Backward form. For convenience, we will refer to the case where \( f=\odot \) as Type1, and the case where \( f=.\) as Type2.
+Now that we have defined the Forward form of Mnet, the next step is to define the Backward form. For convenience, we will refer to the case where \($f=\odot$\) as Type1, and the case where \($f=.$\) as Type2.
 
 Type1:
 $$
@@ -243,12 +245,13 @@ $$
 $$
 
 
+
 ## Type1
 
 $$
 \mathbf {ds}_t = \mathbf m_t \mathbf {dy_t} \in \mathbb R^{k},\\
 \mathbf {dm}_{t-1}=\mathbf f_t \odot \mathbf {dm}_{t} + \mathbf s_{t-1}  \mathbf {dy}_{t-1} ^{\top}\in \mathbb R^{k\times d}, \\
-\mathbf {df}_{t}=\mathbf m_t  \odot \mathbf {dm}_{t}\in \mathbb R^{k\times d}, \\
+\mathbf {df}_{t}=\mathbf {dm}_{t} \odot \mathbf m_t \in \mathbb R^{k\times d}, \\
 \mathbf {de}_{t}= \mathbf {dm}_{t} \mathbf i_t \in \mathbb R^{k}, \\
 
 \mathbf {di}_{t}= \mathbf {dm}_{t}^{\top} \mathbf e_t \in \mathbb R^{d}. \\
