@@ -1,9 +1,18 @@
-from einops import rearrange
+from einops import rearrange, repeat
 import torch
 import torch.nn.functional as F
 import pytest
 import os
 import triton
+
+def is_dependent(x):
+    return len(x.shape) >= 3
+
+def process(x, i):
+    if is_dependent(x):
+        return x[:, i]
+    else:
+        return x
 
 def expand_and_shrink(i, e, f, s, m0=None):
     b, n, d = i.shape
@@ -14,10 +23,14 @@ def expand_and_shrink(i, e, f, s, m0=None):
     output = []
     for _ in range(n):
         i_ = i[:, _]
-        e_ = e[:, _]
-        f_ = f[:, _]
-        s_ = s[:, _]
-        
+        # e_ = e[:, _]
+        # f_ = f[:, _]
+        # s_ = s[:, _]
+        e_ = process(e, _)
+        f_ = process(f, _)
+        s_ = process(s, _)
+        # print(f_.shape, m.shape)
+        # assert False
         m = f_ * m + torch.einsum("... k, ... d -> ... k d", e_, i_)
         y = torch.einsum("... k d, ... k -> ... d", m, s_)
         output.append(y.unsqueeze(1))
@@ -46,10 +59,10 @@ def pscan(i, e, f, s, m0=None):
     
     log_f = complex_log(f)
     log_m_bar = complex_log(m_bar)
-    if len(f.shape) > 2: # data dependent
+    if is_dependent(f): # data dependent
         f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))      
     else: # data independent
-        f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(i) * log_f
+        f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f) * log_f
 
     log_m0_plus_m_star = torch.logcumsumexp(log_m_bar - f_star, dim=-3)
     log_m = f_star + log_m0_plus_m_star
@@ -76,10 +89,10 @@ class Pscan(torch.autograd.Function):
         
         log_f = complex_log(f)
         log_m_bar = complex_log(m_bar)
-        if len(f.shape) > 2: # data dependent
+        if is_dependent(f): # data dependent
             f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))      
         else: # data independent
-            f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(i) * log_f
+            f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f) * log_f
 
         log_m0_plus_m_star = torch.logcumsumexp(log_m_bar - f_star, dim=-3)
         log_m = f_star + log_m0_plus_m_star
@@ -106,10 +119,10 @@ class Pscan(torch.autograd.Function):
         
         log_f = complex_log(f)
         log_m_bar = complex_log(m_bar)
-        if len(f.shape) > 2: # data dependent
+        if is_dependent(f): # data dependent
             f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))      
         else: # data independent
-            f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(i) * log_f
+            f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f) * log_f
 
         log_m0_plus_m_star = torch.logcumsumexp(log_m_bar - f_star, dim=-3)
         log_m = f_star + log_m0_plus_m_star
@@ -122,21 +135,23 @@ class Pscan(torch.autograd.Function):
         dm_bar = torch.flip(dm_bar, dims=[-3])
         b, n, k, d = dm_bar.shape
         dmn = torch.zeros(b, 1, k, d).to(dm_bar)
-        dm_bar = torch.cat([dmn, dm_bar], dim=-3)
+        dm_bar = torch.cat([dm_bar, dmn], dim=-3)
         
-        log_f_reverse = torch.flip(log_f, dims=[-3])
+        if is_dependent(f):
+            log_f_reverse = torch.flip(log_f, dims=[-3])
+        else:
+            log_f_reverse = log_f
         log_dm_bar = complex_log(dm_bar)
         if len(f.shape) > 2: # data dependent
             f_star_reverse = F.pad(torch.cumsum(log_f_reverse, dim=-3), (0, 0, 0, 0, 1, 0))      
         else: # data independent
-            f_star_reverse = torch.arange(n + 1).reshape(1, -1, 1, 1).to(i) * log_f_reverse
+            f_star_reverse = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f) * log_f_reverse
 
-        print(f_star_reverse.shape, log_dm_bar.shape)
         log_dm0_plus_dm_star = torch.logcumsumexp(log_dm_bar - f_star_reverse, dim=-3)
         log_dm_reverse = f_star_reverse + log_dm0_plus_dm_star
-        dm = torch.exp(torch.flip(log_dm_reverse, dims=[-3])).real[:, :-1].to(i.dtype)
+        dm = torch.exp(torch.flip(log_dm_reverse, dims=[-3])).real[:, 1:].to(i.dtype)
 
-        df = dm * m[:, 1:]
+        df = dm * m[:, :-1]
         de = torch.einsum("... k d, ... d -> ... k", dm, i)
         di = torch.einsum("... k d, ... k -> ... d", dm, e)
         
@@ -151,9 +166,13 @@ pscan_torch = Pscan.apply
 )
 @pytest.mark.parametrize('e_dependent, f_dependent, s_dependent', 
     [
-        (True, True, True),
+        # (True, True, True),
+        (True, False, True),
+        # (True, True, False),
+        # (False, True, True),
     ]
 )
+# @pytest.mark.parametrize('dtype', [torch.float32])
 @pytest.mark.parametrize('dtype', [torch.bfloat16])
 def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cuda:0"):
     torch.manual_seed(20)
@@ -164,9 +183,12 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
         e = torch.empty((k), dtype=dtype, device=device).normal_(mean=0., std=0.5).requires_grad_()
         
     if f_dependent:
-        f = torch.empty((b, n, k, d), dtype=dtype, device=device).normal_(mean=0., std=0.5).requires_grad_()
+        f = F.sigmoid(torch.empty((b, n, k, d), dtype=dtype, device=device).normal_(mean=0., std=0.5)).requires_grad_()
     else:
-        f = torch.empty((k, d), dtype=dtype, device=device).normal_(mean=0., std=0.5).requires_grad_()
+        f = F.sigmoid(torch.empty((k, d), dtype=dtype, device=device).normal_(mean=0., std=0.5)).requires_grad_()
+        # f = torch.ones((k, d), dtype=dtype, device=device).requires_grad_()
+        # f = F.sigmoid(torch.empty((1, 1, k, d), dtype=dtype, device=device).normal_(mean=0., std=0.5)).requires_grad_()
+        # f = repeat(f, "x y k d -> (x b) (y n) k d", b=b, n=n)
     
     if s_dependent:
         s = torch.empty((b, n, k), dtype=dtype, device=device).normal_(mean=0., std=0.5).requires_grad_()
@@ -220,98 +242,98 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     torch.testing.assert_close(ref_ds.float(), pscan_ds.float(), atol=5e-2, rtol=1e-2)
 
 
-b, n, k, d = 6, 512, 32, 128
-device = "cuda:0"
-speed_configs = [triton.testing.Benchmark(
-    x_names=['N_CTX'],
-    # x_vals=[2**i for i in range(10, 16)],
-    # x_vals=[2**i for i in range(10, 15)],
-    x_vals=[2**i for i in range(10, 14)],
-    # x_vals=[2**i for i in range(10, 13)],
-    line_arg='provider',
-    # line_vals=['triton', "linear", "softmax", "xformers"] + (['flash'] if HAS_FLASH else []),
-    # line_names=['Triton', "Linear", "Softmax", "Xformers"] + (['Flash'] if HAS_FLASH else []),
-    line_vals=['attention_lrpe', 'lightning_lrpe'] + (['flash'] if HAS_FLASH else []),
-    line_names=['attention_lrpe', 'lightning_lrpe'] + (['Flash'] if HAS_FLASH else []),
-    # line_vals=['triton',] + (['xformers']),
-    # line_names=['Triton',] + (['Xformers']),
-    # line_vals=['triton', "xformers"] + (['flash'] if HAS_FLASH else []),
-    # line_names=['Triton', "Xformers"] + (['Flash'] if HAS_FLASH else []),
-    # line_vals=["xformers"],
-    # line_names=["Xformers"],
-    styles=[('red', '-'), ('orange', '-'), ('green', '-'), ('blue', '-'), ('black', '-')],
-    ylabel='ms',
-    plot_name=f'fused-linear-attention-batch{BATCH}-head{N_HEADS}-qk{QK_HEAD}-v{V_HEAD}-{mode}-causal-{causal}',
-    args={'H': N_HEADS, 'BATCH': BATCH, 'QK_HEAD': QK_HEAD, 'V_HEAD': V_HEAD, 'dtype': torch.float16, 'mode': mode, 'causal': causal}
-) for mode in ['fwd', 'bwd'] for causal in [True]]
+# b, n, k, d = 6, 512, 32, 128
+# device = "cuda:0"
+# speed_configs = [triton.testing.Benchmark(
+#     x_names=['N_CTX'],
+#     # x_vals=[2**i for i in range(10, 16)],
+#     # x_vals=[2**i for i in range(10, 15)],
+#     x_vals=[2**i for i in range(10, 14)],
+#     # x_vals=[2**i for i in range(10, 13)],
+#     line_arg='provider',
+#     # line_vals=['triton', "linear", "softmax", "xformers"] + (['flash'] if HAS_FLASH else []),
+#     # line_names=['Triton', "Linear", "Softmax", "Xformers"] + (['Flash'] if HAS_FLASH else []),
+#     line_vals=['attention_lrpe', 'lightning_lrpe'] + (['flash'] if HAS_FLASH else []),
+#     line_names=['attention_lrpe', 'lightning_lrpe'] + (['Flash'] if HAS_FLASH else []),
+#     # line_vals=['triton',] + (['xformers']),
+#     # line_names=['Triton',] + (['Xformers']),
+#     # line_vals=['triton', "xformers"] + (['flash'] if HAS_FLASH else []),
+#     # line_names=['Triton', "Xformers"] + (['Flash'] if HAS_FLASH else []),
+#     # line_vals=["xformers"],
+#     # line_names=["Xformers"],
+#     styles=[('red', '-'), ('orange', '-'), ('green', '-'), ('blue', '-'), ('black', '-')],
+#     ylabel='ms',
+#     plot_name=f'fused-linear-attention-batch{BATCH}-head{N_HEADS}-qk{QK_HEAD}-v{V_HEAD}-{mode}-causal-{causal}',
+#     args={'H': N_HEADS, 'BATCH': BATCH, 'QK_HEAD': QK_HEAD, 'V_HEAD': V_HEAD, 'dtype': torch.float16, 'mode': mode, 'causal': causal}
+# ) for mode in ['fwd', 'bwd'] for causal in [True]]
 
 
-@triton.testing.perf_report(speed_configs)
-def bench_flash_attention_speed(b, n, k, d, mode, provider, dtype=torch.float16, device="cuda"):
-    assert mode in ['fwd', 'bwd']
-    warmup = 25
-    rep = 100
-    if provider == "attention_lrpe":
-        q = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        k = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        v = torch.randn((BATCH, H, N_CTX, V_HEAD), dtype=dtype, device=device, requires_grad=True)
-        theta = torch.randn((H, QK_HEAD), dtype=dtype, device="cuda")
-        # slopes = torch.empty(0).to(q)
-        # fn = lambda: attention(q, k, v, causal, slopes)
-        fn = lambda: attention_lrpe(q, k, v, theta)
-        if mode == 'bwd':
-            o = fn()
-            do = torch.randn_like(o)
-            fn = lambda: o.backward(do, retain_graph=True)
-    if provider == "lightning_lrpe":
-        q = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        k = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        v = torch.randn((BATCH, H, N_CTX, V_HEAD), dtype=dtype, device=device, requires_grad=True)
-        theta = torch.randn((H, QK_HEAD), dtype=dtype, device="cuda")
-        # slopes = torch.empty(0).to(q)
-        # fn = lambda: attention(q, k, v, causal, slopes)
-        fn = lambda: lightning_lrpe(q, k, v, theta)
-        if mode == 'bwd':
-            o = fn()
-            do = torch.randn_like(o)
-            fn = lambda: o.backward(do, retain_graph=True)
-    elif provider == "flash":
-        q = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        k = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        v = torch.randn((BATCH, N_CTX, H, V_HEAD), dtype=dtype, device=device, requires_grad=True)
-        sm_scale = 1.3
-        fn = lambda: flash_wrapper(q, k, v, 0., sm_scale, causal)
-        if mode == 'bwd':
-            o = fn()
-            do = torch.randn_like(o)
-            fn = lambda: o.backward(do, retain_graph=True)
-    elif provider in ["linear", "softmax"]:
-        q = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        k = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        v = torch.randn((BATCH, H, N_CTX, V_HEAD), dtype=dtype, device=device, requires_grad=True)
-        slopes = _build_csb_tensor(H).to(q)
-        M = get_full_mask(N_CTX, slopes).to(q)
-        fn = lambda: naive_linear(q, k, v, causal, M)
-        if mode == 'bwd':
-            o = fn()
-            do = torch.randn_like(o)
-            fn = lambda: o.backward(do, retain_graph=True)
-    elif provider == "xformers":
-        q = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        k = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
-        v = torch.randn((BATCH, N_CTX, H, V_HEAD), dtype=dtype, device=device, requires_grad=True)
-        # if causal:
-        #     fn = lambda: xops.memory_efficient_attention(q, k, v, attn_bias=xops.LowerTriangularMask())
-        # else:
-        #     fn = lambda: xops.memory_efficient_attention(q, k, v)
-        fn = lambda: xformer_wrapper(q, k, v, causal)
-        if mode == 'bwd':
-            o = fn()
-            do = torch.randn_like(o)
-            fn = lambda: o.backward(do, retain_graph=True)
-    ms = triton.testing.do_bench(fn, warmup=warmup, rep=rep)
+# @triton.testing.perf_report(speed_configs)
+# def bench_flash_attention_speed(b, n, k, d, mode, provider, dtype=torch.float16, device="cuda"):
+#     assert mode in ['fwd', 'bwd']
+#     warmup = 25
+#     rep = 100
+#     if provider == "attention_lrpe":
+#         q = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         k = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         v = torch.randn((BATCH, H, N_CTX, V_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         theta = torch.randn((H, QK_HEAD), dtype=dtype, device="cuda")
+#         # slopes = torch.empty(0).to(q)
+#         # fn = lambda: attention(q, k, v, causal, slopes)
+#         fn = lambda: attention_lrpe(q, k, v, theta)
+#         if mode == 'bwd':
+#             o = fn()
+#             do = torch.randn_like(o)
+#             fn = lambda: o.backward(do, retain_graph=True)
+#     if provider == "lightning_lrpe":
+#         q = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         k = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         v = torch.randn((BATCH, H, N_CTX, V_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         theta = torch.randn((H, QK_HEAD), dtype=dtype, device="cuda")
+#         # slopes = torch.empty(0).to(q)
+#         # fn = lambda: attention(q, k, v, causal, slopes)
+#         fn = lambda: lightning_lrpe(q, k, v, theta)
+#         if mode == 'bwd':
+#             o = fn()
+#             do = torch.randn_like(o)
+#             fn = lambda: o.backward(do, retain_graph=True)
+#     elif provider == "flash":
+#         q = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         k = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         v = torch.randn((BATCH, N_CTX, H, V_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         sm_scale = 1.3
+#         fn = lambda: flash_wrapper(q, k, v, 0., sm_scale, causal)
+#         if mode == 'bwd':
+#             o = fn()
+#             do = torch.randn_like(o)
+#             fn = lambda: o.backward(do, retain_graph=True)
+#     elif provider in ["linear", "softmax"]:
+#         q = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         k = torch.randn((BATCH, H, N_CTX, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         v = torch.randn((BATCH, H, N_CTX, V_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         slopes = _build_csb_tensor(H).to(q)
+#         M = get_full_mask(N_CTX, slopes).to(q)
+#         fn = lambda: naive_linear(q, k, v, causal, M)
+#         if mode == 'bwd':
+#             o = fn()
+#             do = torch.randn_like(o)
+#             fn = lambda: o.backward(do, retain_graph=True)
+#     elif provider == "xformers":
+#         q = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         k = torch.randn((BATCH, N_CTX, H, QK_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         v = torch.randn((BATCH, N_CTX, H, V_HEAD), dtype=dtype, device=device, requires_grad=True)
+#         # if causal:
+#         #     fn = lambda: xops.memory_efficient_attention(q, k, v, attn_bias=xops.LowerTriangularMask())
+#         # else:
+#         #     fn = lambda: xops.memory_efficient_attention(q, k, v)
+#         fn = lambda: xformer_wrapper(q, k, v, causal)
+#         if mode == 'bwd':
+#             o = fn()
+#             do = torch.randn_like(o)
+#             fn = lambda: o.backward(do, retain_graph=True)
+#     ms = triton.testing.do_bench(fn, warmup=warmup, rep=rep)
 
-    return ms
+#     return ms
 
 
     
