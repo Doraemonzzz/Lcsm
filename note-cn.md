@@ -240,13 +240,8 @@ $$
 
 $$
 \mathbf {ds}_t = \mathbf m_t \mathbf {dy_t} \in \mathbb R^{k},\\
-<<<<<<< HEAD
 \mathbf {dm}_{t-1}=\mathbf f_t \odot \mathbf {dm}_{t} + \mathbf s_{t-1}  \mathbf {dy}_{t-1} ^{\top}\in \mathbb R^{k\times d}, \mathbf {dm}_n=\mathbf s_{n}  \mathbf {dy}_{n} ^{\top}\in \mathbb R^{k\times d},\\
 \mathbf {df}_{t}= \mathbf {dm}_{t}\odot \mathbf m_{t-1} \in \mathbb R^{k\times d}, \\
-=======
-\mathbf {dm}_{t-1}=\mathbf f_t \odot \mathbf {dm}_{t} + \mathbf s_{t-1}  \mathbf {dy}_{t-1} ^{\top}\in \mathbb R^{k\times d}, \\
-\mathbf {df}_{t}= \mathbf {dm}_{t} \odot\mathbf m_{t-1}  \in \mathbb R^{k\times d}, \\
->>>>>>> 97516fbbfc14a82178de3b72cf5c3ed0f1f2895a
 \mathbf {de}_{t}= \mathbf {dm}_{t} \mathbf i_t \in \mathbb R^{k}, \\
 
 \mathbf {di}_{t}= \mathbf {dm}_{t}^{\top} \mathbf e_t \in \mathbb R^{d}. \\

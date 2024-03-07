@@ -150,7 +150,8 @@ class Pscan(torch.autograd.Function):
 
         log_dm0_plus_dm_star = torch.logcumsumexp(log_dm_bar - f_star_reverse, dim=-3)
         log_dm_reverse = f_star_reverse + log_dm0_plus_dm_star
-        dm = torch.exp(torch.flip(log_dm_reverse, dims=[-3])).real[:, 1:].to(i.dtype)
+        # dm = torch.exp(torch.flip(log_dm_reverse, dims=[-3])).real[:, 1:].to(i.dtype)
+        dm = torch.flip(torch.exp(log_dm_reverse).real[:, :-1], dims=[-3]).to(i.dtype)
 
         df = dm * m[:, :-1]
         de = torch.einsum("... k d, ... d -> ... k", dm, i)
@@ -161,7 +162,7 @@ class Pscan(torch.autograd.Function):
 pscan_torch = Pscan.apply
 
 ##### Block version
-def pscan_fn(i, e, f, m0, s_arry, dims=(-2)):
+def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False):
     # i: b, n, d
     # e: b, n, k or k
     # f: b, n, k, d or k, d
@@ -169,7 +170,10 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2)):
     b, n, d = i.shape
     # construct memory
     m_bar = torch.einsum("... k, ... d -> ... k d", e, i) # b, n, k, d
-    m_bar = torch.cat([m0, m_bar], dim=-3)
+    if reverse:
+        m_bar = torch.cat([m_bar, m0], dim=-3)
+    else:
+        m_bar = torch.cat([m0, m_bar], dim=-3)
     
     log_f = complex_log(f)
     log_m_bar = complex_log(m_bar)
@@ -180,7 +184,12 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2)):
 
     log_m0_plus_m_star = torch.logcumsumexp(log_m_bar - f_star, dim=-3)
     log_m = f_star + log_m0_plus_m_star
-    m = torch.exp(log_m).real[:, 1:].to(i.dtype)
+    # if reverse:
+    #     m = torch.exp(log_m).real[:, :-1].to(i.dtype)
+    # else:
+    #     m = torch.exp(log_m).real[:, 1:].to(i.dtype)
+    
+    m = torch.exp(log_m).real.to(i.dtype)
 
     output = []
     for i, dim in enumerate(dims):
@@ -188,9 +197,15 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2)):
             pattern = "... k d, ... k -> ... d"
         else:
             pattern = "... k d, ... d -> ... k"
-        output.append(torch.einsum(pattern, m, s_arry[i]))
+        if reverse:
+            output.append(torch.einsum(pattern, m[:, :-1], s_arry[i]))
+        else:
+            output.append(torch.einsum(pattern, m[:, 1:], s_arry[i]))
     
-    return output, m[:, -1:]
+    if reverse:
+        return output, m[:, 0:1], None
+    else:
+        return output, m[:, -1:], None
 
 class PscanBlock(torch.autograd.Function):
     @staticmethod
@@ -230,7 +245,7 @@ class PscanBlock(torch.autograd.Function):
             else:
                 st = s
                 
-            output, m = pscan_fn(it, et, ft, m, (st,), dims=(-2,))
+            output, m, _ = pscan_fn(it, et, ft, m, (st,), dims=(-2,))
             ot = output[0]
             o.append(ot)
             
@@ -279,7 +294,7 @@ class PscanBlock(torch.autograd.Function):
             else:
                 st = s
                 
-            output, m = pscan_fn(it, et, ft, m, (dot,), dims=(-1,))
+            output, m, _ = pscan_fn(it, et, ft, m, (dot,), dims=(-1,))
             dst = output[0]
             ds.append(dst)
         
@@ -304,15 +319,16 @@ class PscanBlock(torch.autograd.Function):
             e_flip = e
         
         if is_f_dependent:
-            f_flip = torch.flip(f, dims=[-2])
+            f_flip = torch.flip(f, dims=[-3])
         else:
             f_flip = f
             
-        m = torch.zeros(b, 1, k, d).to(i)
+        dm = torch.zeros(b, 1, k, d).to(i)
         de = []
         di = []
         
         for t in range(T):
+            print(dm[0, 0, :3, :3])
             start = t * C
             end = min(n, start + C)
             # get chunk
@@ -334,20 +350,44 @@ class PscanBlock(torch.autograd.Function):
             else:
                 ft = f_flip
                 
-            output, m = pscan_fn(dot, st, ft, m, (et, it), dims=(-2, -1))
+            output, dm, DM = pscan_fn(dot, st, ft, dm, (et, it), dims=(-2, -1), reverse=True)
             dit = output[0]
             det = output[1]
             
-            de.append(det)
             di.append(dit)
-            
-        de = torch.flip(torch.cat(de, dim=-2), dims=[-2])
+            de.append(det)
+
         di = torch.flip(torch.cat(di, dim=-2), dims=[-2])
-        
-        # de = torch.cat(de, dim=-2)
-        # di = torch.cat(di, dim=-2)
+        de = torch.flip(torch.cat(de, dim=-2), dims=[-2])
 
         df = None
+        
+        
+        # ##### ok        
+        # # others
+        # dm_bar = torch.einsum("... k, ... d -> ... k d", s_flip, do_flip) # b, n, k, d
+        # b, n, k, d = dm_bar.shape
+        # dmn = torch.zeros(b, 1, k, d).to(dm_bar)
+        # dm_bar = torch.cat([dm_bar, dmn], dim=-3)
+        
+        # log_f_reverse = complex_log(f_flip)
+        # log_dm_bar = complex_log(dm_bar)
+        # if len(f.shape) > 2: # data dependent
+        #     f_star_reverse = F.pad(torch.cumsum(log_f_reverse, dim=-3), (0, 0, 0, 0, 1, 0))      
+        # else: # data independent
+        #     f_star_reverse = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f_reverse) * log_f_reverse
+
+        # log_dm0_plus_dm_star = torch.logcumsumexp(log_dm_bar - f_star_reverse, dim=-3)
+        # log_dm_reverse = f_star_reverse + log_dm0_plus_dm_star
+        # # dm = torch.exp(torch.flip(log_dm_reverse, dims=[-3])).real[:, 1:].to(i.dtype)
+        # dm = torch.flip(torch.exp(log_dm_reverse).real[:, :-1], dims=[-3]).to(i.dtype)
+        
+        # # print(torch.norm(torch.exp(log_dm_reverse).real - DM))
+        # # print(torch.norm(f_star_reverse - DM)) # ok
+        # print(torch.norm(log_dm_bar - DM)) # ok
+
+        # de = torch.einsum("... k d, ... d -> ... k", dm, i)
+        # di = torch.einsum("... k d, ... k -> ... d", dm, e)
         
         return di, de, df, ds, None
 
@@ -357,6 +397,7 @@ pscan_block = PscanBlock.apply
     [
         # (6, 512, 32, 128),
         (6, 2048, 32, 128),
+        # (6, 256, 32, 128),
     ]
 )
 @pytest.mark.parametrize('e_dependent, f_dependent, s_dependent', 
@@ -371,8 +412,8 @@ pscan_block = PscanBlock.apply
         # (False, False, False),
     ]
 )
-# @pytest.mark.parametrize('dtype', [torch.float32])
-@pytest.mark.parametrize('dtype', [torch.bfloat16])
+@pytest.mark.parametrize('dtype', [torch.float32])
+# @pytest.mark.parametrize('dtype', [torch.bfloat16])
 def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cuda:0"):
     torch.manual_seed(20)
     i = torch.empty((b, n, d), dtype=dtype, device=device).normal_(mean=0., std=0.5).requires_grad_()
