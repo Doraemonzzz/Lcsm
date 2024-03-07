@@ -217,6 +217,7 @@ $$
 $$
 
 
+
 # Backward
 
 现在已经定义了Mnet的Forward形式，接下来就是Backward形式，为了方便叙述，我们将$f=\odot$的情形称为Type1，$f=.$的形式称为Type2。
@@ -261,9 +262,92 @@ $$
 
 
 
+# Navie computation
+
+我们使用[9]的方法并行计算出$\mathbf m_t, t=1,\ldots, n$，然后计算出$\mathbf y_t$，这种方法的问题是空间复杂度是$O(nkd)$。
+
+
+
 # Fast computation
 
-Todo
+以block为粒度操作即可。
+
+
+
+现在考虑Block粒度进行操作，假设将$\mathbf X\in \mathbb R^{n\times d}$分解为$m$个Blocks $\mathbf X_1, \ldots, \mathbf X_m$，其中Block size为$B$，$m=n/B$，$\mathbf X_t \in \mathbb R^{m\times d}$，记：
+$$
+\mathbf M_t = \mathbf m_{tB}.
+$$
+记：
+$$
+\mathbf {a}_t =\mathbf e_t \mathbf i_t^\top, t=1,\ldots,n. \\
+\mathbf {a}_0 = \mathbf m_0, \\
+\mathbf {\bar f}_t  =\prod_{j=1}^t \mathbf f_j, \mathbf {\bar f}_0=1.
+$$
+那么
+$$
+\mathbf m_{t}=\sum_{j=0}^t \frac{\mathbf {\bar f}_t}{\mathbf {\bar f}_j}\odot \mathbf a_j
+=\mathbf {\bar f}_t \odot \sum_{j=0}^t \frac{\mathbf a_j}{\mathbf {\bar f}_j}
+$$
+考虑$j=tB+k, 1\le k \le B$，那么：
+$$
+\begin{aligned}
+\mathbf m_{tB+k}&= \mathbf {\bar f}_{tB+k} \odot \sum_{j=0}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j}  \\
+&= \mathbf {\bar f}_{tB+k} \odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +
+\mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
+&=\frac{\mathbf {\bar f}_{tB+k}}{\mathbf {\bar f}_{(t-1)B} }  \odot \mathbf {\bar f}_{(t-1)B} 
+\odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +\mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
+&= \frac{\mathbf {\bar f}_{tB+k}}{\mathbf {\bar f}_{(t-1)B} } \odot \mathbf M_{t-1}+
+\mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
+
+\mathbf y_{tB+k}&= \mathbf m_{tB+k}^{\top} \mathbf s_{tB+k} \\
+&=\left(
+
+ \frac{\mathbf {\bar f}_{tB+k}}{\mathbf {\bar f}_{(t-1)B} } \odot \mathbf M_{t-1}+
+\mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j}
+
+\right)^{\top} \mathbf s_{tB+k}
+
+\end{aligned}
+$$
+所以：
+$$
+\begin{aligned}
+\mathbf M_{t}
+&=\mathbf m_{tB}\\
+&=\mathbf {\bar f}_{tB} \odot \sum_{j=0}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j}  \\
+&= \mathbf {\bar f}_{tB} \odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +
+\mathbf {\bar f}_{tB} \odot \sum_{j=(t-1)B+1}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
+&=\frac{\mathbf {\bar f}_{tB}}{\mathbf {\bar f}_{(t-1)B} }  \odot \mathbf {\bar f}_{(t-1)B} 
+\odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +\mathbf {\bar f}_{tB} \odot \sum_{j=(t-1)B+1}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
+&= \frac{\mathbf {\bar f}_{tB}}{\mathbf {\bar f}_{(t-1)B} } \odot \mathbf M_{t-1}+
+\mathbf {\bar f}_{tB} \odot \sum_{j=(t-1)B+1}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j}
+\end{aligned}
+$$
+注意到$\mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j}$实际上是递推式：
+$$
+\mathbf m_{j}=\mathbf f_j \odot \mathbf m_{j-1} + \mathbf e_j \mathbf i_j^\top, j=
+$$
+
+
+
+
+
+
+
+
+以Block形式，我们有：
+$$
+\mathbf Y_t = \mathbf S_t\mathbf M_{t-1}+ \mathbf S_t .  \\
+\mathbf M_{t} = \mathbf M_{t-1}
+$$
+
+
+
+$$
+\mathbf m_{t}=\mathbf f_t \odot \mathbf m_{t-1} + \mathbf e_t \mathbf i_t^\top
+$$
+
 
 
 
