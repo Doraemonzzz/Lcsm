@@ -43,16 +43,18 @@ $$
 
 受到RNN的启发，我们通过memory进行序列映射的构造：
 
-(old version)
-- memory $\mathbf m_t \in \mathbb R^{d\times e}$；
-- forget gate $\mathbf f_t \in \mathbb R^{d\times e}$;
-- input gate $\mathbf i_t \in \mathbb R^{e}$;
+(old version, for reference)
+- memory $\mathbf m_t \in \mathbb R^{k\times d}$；
+- forget gate $\mathbf f_t \in \mathbb R^{k\times ?}$;
+- input gate $\mathbf i_t \in \mathbb R^{k}$;
 - input state $\mathbf u_t \in \mathbb R^{d}$;
-- output gate $\mathbf o_t \in \mathbb R^{e}$;
+- output gate $\mathbf o_t \in \mathbb R^{d}$;
 
 (new version)
 - memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
 - forget state $\mathbf f_t \in \mathbb R^{k\times ？}$;
+  - may be shock gate?
+
 - expand state $\mathbf e_t \in \mathbb R^{k}$;
 - input state $\mathbf i_t \in \mathbb R^{d}$;
 - shrink state $\mathbf s_t \in \mathbb R^{k}$;
@@ -87,7 +89,7 @@ forget state, input state, expand state, shrink state都是通过$\mathbf  x_t$�
 | S4               | $\mathbf C\in \mathbb R^ k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^1$   | $k\times 1$  | matrix production       |
 | S5               | $\mathbf C\in \mathbb R^k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^d$   | $k \times d$ | matrix production       |
 | TNL              | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf \lambda \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | matrix production       |
-| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times e$  | element wise production |
+| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times d$  | element wise production |
 | RWKV | $\mathbf R_t \in \mathbb R^1$ | $\exp(-w ) \in \mathbb R^{1\times 1}$ | $\exp(\mathbf k_t) \in \mathbb R^{1}$ | $\mathbf v_t \mathbf \in \mathbb R^1$ | $1\times 1$ | element wise production / matrix  production |
 | Cosformer | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\theta) \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | matrix production |
 | Lrpe | $\mathbf q_t\in \mathbb R^{k}$ | $\Lambda =\mathrm{diag}\{\exp(i\theta_1),\ldots, \exp(i\theta_k) \}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | matrix production |
@@ -180,8 +182,8 @@ $$
 证明：
 $$
 \begin{aligned}
-\mathrm{Rel}\{[\mathbf {kv}_t] \}&= \sum_{s=1}^t \exp(i (t-s) \theta)\mathbf k_s\mathbf  v_s^\top \\
-\mathbf y_t&= \mathrm{Rel}\{[\mathbf {kv}_t] \}^{\top} \mathbf q_t \\
+{[\mathbf {kv}]_t }&= \sum_{s=1}^t \exp(i (t-s) \theta)\mathbf k_s\mathbf  v_s^\top \\
+\mathbf y_t&= \mathrm{Rel}\{[\mathbf {kv}]_t \}^{\top} \mathbf q_t \\
 &= \mathrm{Rel}\left\{
 \sum_{s=1}^t \exp(i (t-s) \theta)\mathbf v_s \mathbf  k_s ^\top\mathbf q_t
 \right\} \\
@@ -204,15 +206,15 @@ $$
 说明：
 $$
 \begin{aligned}
-\mathrm{Rel}\{[\mathbf {kv}_t] \}&= \sum_{s=1}^t \Lambda^{t-s}\mathbf k_s\mathbf  v_s^\top \\
+{[\mathbf {kv}]_t } &= \sum_{s=1}^t \Lambda^{t-s}\mathbf k_s\mathbf  v_s^\top \\
 \mathbf y_t&= \mathrm{Rel}\{[\mathbf {kv}_t] \}^{\top} \mathbf q_t \\
 &= \mathrm{Rel}\left\{
 \sum_{s=1}^t \Lambda^{t-s}\mathbf v_s \mathbf  k_s ^\top\mathbf q_t
 \right\} \\
 &=
-\sum_{s=1}^t \mathbf v_s \mathbf  k_s ^\top \Lambda_{t-s}\mathbf q_t
+\sum_{s=1}^t \mathbf v_s \mathbf  k_s ^\top \bar \Lambda_{t-s}\mathbf q_t
  \\
-  \Lambda_{t-s}&= \mathrm{diag}\{\cos((t-s)\theta_1),\ldots, \cos((t-s)\theta_k) \}
+ \bar  \Lambda_{t-s}&= \mathrm{diag}\{\cos((t-s)\theta_1),\ldots, \cos((t-s)\theta_k) \}
 \end{aligned}
 $$
 
