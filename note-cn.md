@@ -238,7 +238,7 @@ $$
 $$
 \mathbf {ds}_t = \mathbf m_t \mathbf {dy_t} \in \mathbb R^{k},\\
 \mathbf {dm}_{t-1}=\mathbf f_t \odot \mathbf {dm}_{t} + \mathbf s_{t-1}  \mathbf {dy}_{t-1} ^{\top}\in \mathbb R^{k\times d}, \\
-\mathbf {df}_{t}=\mathbf m_t  \odot \mathbf {dm}_{t}\in \mathbb R^{k\times d}, \\
+\mathbf {df}_{t}= \mathbf {dm}_{t} \odot\mathbf m_{t-1}  \in \mathbb R^{k\times d}, \\
 \mathbf {de}_{t}= \mathbf {dm}_{t} \mathbf i_t \in \mathbb R^{k}, \\
 
 \mathbf {di}_{t}= \mathbf {dm}_{t}^{\top} \mathbf e_t \in \mathbb R^{d}. \\
@@ -251,7 +251,7 @@ $$
 $$
 \mathbf {ds}_t = \mathbf m_t \mathbf {dy_t} \in \mathbb R^{k},\\
 \mathbf {dm}_{t-1}=\mathbf f_t \mathbf {dm}_{t} + \mathbf s_{t-1}  \mathbf {dy}_{t-1} ^{\top}\in \mathbb R^{k\times d}, \\
-\mathbf {df}_{t}=  \mathbf {dm}_{t} \mathbf m_t^{\top} \in \mathbb R^{k\times k}, \\
+\mathbf {df}_{t}=  \mathbf {dm}_{t} \mathbf m_{t-1}^{\top} \in \mathbb R^{k\times k}, \\
 \mathbf {de}_{t}= \mathbf {dm}_{t} \mathbf i_t \in \mathbb R^{k}, \\
 
 \mathbf {di}_{t}= \mathbf {dm}_{t}^{\top} \mathbf e_t \in \mathbb R^{d}. \\
