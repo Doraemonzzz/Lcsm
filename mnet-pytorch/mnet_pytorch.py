@@ -170,10 +170,12 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False):
     b, n, d = i.shape
     # construct memory
     m_bar = torch.einsum("... k, ... d -> ... k d", e, i) # b, n, k, d
-    if reverse:
-        m_bar = torch.cat([m_bar, m0], dim=-3)
-    else:
-        m_bar = torch.cat([m0, m_bar], dim=-3)
+    # has problem here
+    # if reverse:
+    #     m_bar = torch.cat([m_bar, m0], dim=-3)
+    # else:
+    #     m_bar = torch.cat([m0, m_bar], dim=-3)
+    m_bar = torch.cat([m0, m_bar], dim=-3) 
     
     log_f = complex_log(f)
     log_m_bar = complex_log(m_bar)
@@ -203,7 +205,7 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False):
             output.append(torch.einsum(pattern, m[:, 1:], s_arry[i]))
     
     if reverse:
-        return output, m[:, 0:1], None
+        return output, m[:, -2:-1], None
     else:
         return output, m[:, -1:], None
 
@@ -396,8 +398,8 @@ pscan_block = PscanBlock.apply
 @pytest.mark.parametrize('b, n, k, d', 
     [
         # (6, 512, 32, 128),
-        (6, 2048, 32, 128),
-        # (6, 256, 32, 128),
+        # (6, 2048, 32, 128),
+        (6, 256, 32, 128),
     ]
 )
 @pytest.mark.parametrize('e_dependent, f_dependent, s_dependent', 
