@@ -173,28 +173,18 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False, f0=None):
     m_bar = torch.einsum("... k, ... d -> ... k d", e, i) # b, n, k, d
     m_bar = torch.cat([m0, m_bar], dim=-3) 
     
-    print(m0[0, 0, :5, :5], m0.shape, "aaa")
+    if is_dependent(f) and reverse:
+        f = torch.cat([f0, f], dim=-3)[:, :-1]
     
     log_f = complex_log(f)
     log_m_bar = complex_log(m_bar)
     if is_dependent(f): # data dependent
-        # f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))   
-        if reverse:
-            print(f0[0, 0, :5, :5], f0.shape)
-            log_f = torch.cat([f0, log_f], dim=-3)
-            f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))[:, :-1]
-            # f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 2, 0))[:, :-1]
-        else:
-            f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))
+        f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))
     else: # data independent
         f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f) * log_f
 
     log_m0_plus_m_star = torch.logcumsumexp(log_m_bar - f_star, dim=-3)
     log_m = f_star + log_m0_plus_m_star
-    # if reverse:
-    #     m = torch.exp(log_m).real[:, :-1].to(i.dtype)
-    # else:
-    #     m = torch.exp(log_m).real[:, 1:].to(i.dtype)
     
     m = torch.exp(log_m).real.to(i.dtype)
 
@@ -204,17 +194,10 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False, f0=None):
             pattern = "... k d, ... k -> ... d"
         else:
             pattern = "... k d, ... d -> ... k"
-        # if reverse:
-        #     output.append(torch.einsum(pattern, m[:, :-1], s_arry[i]))
-        # else:
-        #     output.append(torch.einsum(pattern, m[:, 1:], s_arry[i]))
+
         output.append(torch.einsum(pattern, m[:, 1:], s_arry[i]))
     
     return output, m[:, -1:], None
-    # if reverse:
-    #     return output, m[:, -2:-1], None
-    # else:
-    #     return output, m[:, -1:], None
 
 class PscanBlock(torch.autograd.Function):
     @staticmethod
@@ -324,10 +307,8 @@ class PscanBlock(torch.autograd.Function):
         
         if is_s_dependent:
             s_flip = torch.flip(s, dims=[-2])
-            # s_last = s_flip[:, -1:]
         else:
             s_flip = s
-            # s_last = s
         
         if is_e_dependent:
             e_flip = torch.flip(e, dims=[-2])
@@ -341,13 +322,11 @@ class PscanBlock(torch.autograd.Function):
             f_flip = f
             
         dm = torch.zeros(b, 1, k, d).to(i)
-        # print(s_last.shape, do_last.shape)
-        # dm = torch.einsum("... k, ... d -> ... k d", s_last, do_last)
         de = []
         di = []
         
         for t in range(T):
-            print(dm[0, 0, :3, :3])
+            # print(dm[0, 0, :3, :3])
             start = t * C
             end = min(n, start + C)
             # get chunk
@@ -381,35 +360,19 @@ class PscanBlock(torch.autograd.Function):
 
         di = torch.flip(torch.cat(di, dim=-2), dims=[-2])
         de = torch.flip(torch.cat(de, dim=-2), dims=[-2])
+        
+        
+        print(ds.shape, s.shape,)
+        print(de.shape, e.shape)
+        if not is_s_dependent:
+            ds = ds.sum(dim=0).sum(dim=0)
+        if not is_e_dependent:
+            de = de.sum(dim=0).sum(dim=0)
 
         df = None
         
-        
-        # ##### ok        
-        # # others
-        # dm_bar = torch.einsum("... k, ... d -> ... k d", s_flip, do_flip) # b, n, k, d
-        # b, n, k, d = dm_bar.shape
-        # dmn = torch.zeros(b, 1, k, d).to(dm_bar)
-        # dm_bar = torch.cat([dm_bar, dmn], dim=-3)
-        
-        # log_f_reverse = complex_log(f_flip)
-        # log_dm_bar = complex_log(dm_bar)
-        # if len(f.shape) > 2: # data dependent
-        #     f_star_reverse = F.pad(torch.cumsum(log_f_reverse, dim=-3), (0, 0, 0, 0, 1, 0))      
-        # else: # data independent
-        #     f_star_reverse = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f_reverse) * log_f_reverse
-
-        # log_dm0_plus_dm_star = torch.logcumsumexp(log_dm_bar - f_star_reverse, dim=-3)
-        # log_dm_reverse = f_star_reverse + log_dm0_plus_dm_star
-        # # dm = torch.exp(torch.flip(log_dm_reverse, dims=[-3])).real[:, 1:].to(i.dtype)
-        # dm = torch.flip(torch.exp(log_dm_reverse).real[:, :-1], dims=[-3]).to(i.dtype)
-        
-        # # print(torch.norm(torch.exp(log_dm_reverse).real - DM))
-        # # print(torch.norm(f_star_reverse - DM)) # ok
-        # print(torch.norm(log_dm_bar - DM)) # ok
-
-        # de = torch.einsum("... k d, ... d -> ... k", dm, i)
-        # di = torch.einsum("... k d, ... k -> ... d", dm, e)
+        print(ds.shape, s.shape,)
+        print(de.shape, e.shape)
         
         return di, de, df, ds, None
 
@@ -424,14 +387,14 @@ pscan_block = PscanBlock.apply
 )
 @pytest.mark.parametrize('e_dependent, f_dependent, s_dependent', 
     [
-        (True, True, True),
+        # (True, True, True),
         # (True, True, False),
         # (True, False, True),
         # (True, False, False),
         # (False, True, True),
         # (False, True, False),
         # (False, False, True),
-        # (False, False, False),
+        (False, False, False),
     ]
 )
 # @pytest.mark.parametrize('dtype', [torch.float32])
