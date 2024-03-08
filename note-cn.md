@@ -352,6 +352,40 @@ $$
 
 
 
+## Sequential Reverse
+
+考虑如下递推：
+$$
+x_{t}=a_{t+1} x_{t+1} + b_{t}, t=1,\ldots, n
+$$
+展开可得：
+$$
+\begin{aligned}
+x_{n}
+&=a_{n+1} x_{n+1} + b_{n}\\
+&=a_{n+1}\left( 
+ x_{n+1} + \frac{ b_{n}}{a_{n+1}}
+\right) \\
+x_{n-1}&= a_n x_n + b_{n-1}\\
+&= a_{n+1} a_n  \left( 
+ x_{n+1} + \frac{ b_{n}}{a_{n+1}} + 
+ \frac{b_{n-1}}{a_{n+1}a_n}
+\right) \\
+
+x_t&= \left( \prod_{s=t+1}^{n+1} a_s \right) \odot
+\left(
+x_{n+1} + \sum_{j=t}^n \frac{b_j}{\prod_{s=j+1}^{n+1} a_s  }
+\right)
+
+
+\end{aligned}
+$$
+
+
+反向的时候，维护一个$a_{n+2}$永远为1，然后接受上一步传入的$a_{n+1}$，如果没有，这一项变为1，concat $a_n$，舍弃最后一项（下标最小的一项），最后计算出的$m_0$是$0$。
+
+
+
 
 
 # Citations
