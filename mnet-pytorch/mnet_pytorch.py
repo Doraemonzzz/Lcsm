@@ -162,7 +162,7 @@ class Pscan(torch.autograd.Function):
 pscan_torch = Pscan.apply
 
 ##### Block version
-def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False, f0=None):
+def pscan_fn_fwd(i, e, f, m0, s_arry, dims=(-2), reverse=False, f0=None, return_last=True):
     # i: b, n, d
     # e: b, n, k or k
     # f: b, n, k, d or k, d
@@ -189,19 +189,61 @@ def pscan_fn(i, e, f, m0, s_arry, dims=(-2), reverse=False, f0=None):
     m = torch.exp(log_m).real.to(i.dtype)
 
     output = []
-    for i, dim in enumerate(dims):
+    for j, dim in enumerate(dims):
         if dim == -2:
             pattern = "... k d, ... k -> ... d"
         else:
             pattern = "... k d, ... d -> ... k"
 
-        output.append(torch.einsum(pattern, m[:, 1:], s_arry[i]))
+        output.append(torch.einsum(pattern, m[:, 1:], s_arry[j]))
     
-    return output, m[:, -1:], None
+    if return_last:
+        return output, m[:, -1:]
+    else:
+        return output, m
+
+def pscan_fn_bwd(i, e, f, m0, m_, s_arry, dims=(-2), reverse=False, f0=None):
+    # i: b, n, d
+    # e: b, n, k or k
+    # f: b, n, k, d or k, d
+    # s: b, n, k or k
+    
+    b, n, d = i.shape
+    # construct memory
+    m_bar = torch.einsum("... k, ... d -> ... k d", e, i) # b, n, k, d
+    m_bar = torch.cat([m0, m_bar], dim=-3) 
+    
+    if is_dependent(f) and reverse:
+        f = torch.cat([f0, f], dim=-3)[:, :-1]
+    
+    log_f = complex_log(f)
+    log_m_bar = complex_log(m_bar)
+    if is_dependent(f): # data dependent
+        f_star = F.pad(torch.cumsum(log_f, dim=-3), (0, 0, 0, 0, 1, 0))
+    else: # data independent
+        f_star = torch.arange(n + 1).reshape(1, -1, 1, 1).to(log_f) * log_f
+
+    log_m0_plus_m_star = torch.logcumsumexp(log_m_bar - f_star, dim=-3)
+    log_m = f_star + log_m0_plus_m_star
+    
+    m = torch.exp(log_m).real.to(i.dtype)
+    
+    df = m[:, 1:] * m_
+
+    output = []
+    for j, dim in enumerate(dims):
+        if dim == -2:
+            pattern = "... k d, ... k -> ... d"
+        else:
+            pattern = "... k d, ... d -> ... k"
+
+        output.append(torch.einsum(pattern, m[:, 1:], s_arry[j]))
+    
+    return output, m[:, -1:], df
 
 class PscanBlock(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, i, e, f, s, C=256):
+    def forward(ctx, i, e, f, s, C=128):
         # i: b, n, d
         # e: b, n, k or k
         # f: b, n, k, d or k, d
@@ -237,7 +279,7 @@ class PscanBlock(torch.autograd.Function):
             else:
                 st = s
                 
-            output, m, _ = pscan_fn(it, et, ft, m, (st,), dims=(-2,))
+            output, m = pscan_fn_fwd(it, et, ft, m, (st,), dims=(-2,))
             ot = output[0]
             o.append(ot)
             
@@ -263,6 +305,7 @@ class PscanBlock(torch.autograd.Function):
         T = (n + C - 1) // C
         m = torch.zeros(b, 1, k, d).to(i)
         ds = []
+        M = []
         
         for t in range(T):
             start = t * C
@@ -286,10 +329,13 @@ class PscanBlock(torch.autograd.Function):
             else:
                 st = s
                 
-            output, m, _ = pscan_fn(it, et, ft, m, (dot,), dims=(-1,))
+            output, m_array = pscan_fn_fwd(it, et, ft, m, (dot,), dims=(-1,), return_last=False)
+            m = m_array[:, -1:]
+            M.append(m_array[:, :-1])
             dst = output[0]
             ds.append(dst)
         
+        M = torch.cat(M, dim=1)
         ds = torch.cat(ds, dim=-2)
         
         ##### di, de, df
@@ -320,10 +366,13 @@ class PscanBlock(torch.autograd.Function):
             f_flip = torch.flip(f, dims=[-3])
         else:
             f_flip = f
-            
+        
+        M_flip = torch.flip(M, dims=[1])
+        
         dm = torch.zeros(b, 1, k, d).to(i)
         de = []
         di = []
+        df = []
         
         for t in range(T):
             # print(dm[0, 0, :3, :3])
@@ -332,6 +381,7 @@ class PscanBlock(torch.autograd.Function):
             # get chunk
             dot = do_flip[:, start:end]
             it = i_flip[:, start:end]
+            mt = M_flip[:, start:end]
             
             if is_s_dependent:
                 st = s_flip[:, start:end]
@@ -347,8 +397,8 @@ class PscanBlock(torch.autograd.Function):
                 ft = f_flip[:, start:end]
             else:
                 ft = f_flip
-                
-            output, dm, DM = pscan_fn(dot, st, ft, dm, (et, it), dims=(-2, -1), reverse=True, f0=f0)
+            
+            output, dm, dft = pscan_fn_bwd(dot, st, ft, dm, mt, (et, it), dims=(-2, -1), reverse=True, f0=f0)
             dit = output[0]
             det = output[1]
             
@@ -357,22 +407,18 @@ class PscanBlock(torch.autograd.Function):
             
             di.append(dit)
             de.append(det)
+            df.append(dft)
 
         di = torch.flip(torch.cat(di, dim=-2), dims=[-2])
         de = torch.flip(torch.cat(de, dim=-2), dims=[-2])
+        df = torch.flip(torch.cat(df, dim=1), dims=[1])
         
-        
-        print(ds.shape, s.shape,)
-        print(de.shape, e.shape)
         if not is_s_dependent:
             ds = ds.sum(dim=0).sum(dim=0)
         if not is_e_dependent:
             de = de.sum(dim=0).sum(dim=0)
-
-        df = None
-        
-        print(ds.shape, s.shape,)
-        print(de.shape, e.shape)
+        if not is_f_dependent:
+            df = df.sum(dim=0).sum(dim=0)
         
         return di, de, df, ds, None
 
@@ -380,20 +426,20 @@ pscan_block = PscanBlock.apply
 
 @pytest.mark.parametrize('b, n, k, d', 
     [
-        (6, 512, 32, 128),
-        # (6, 2048, 32, 128),
+        # (6, 512, 32, 128),
+        (6, 2048, 32, 128),
         # (6, 256, 32, 128),
     ]
 )
 @pytest.mark.parametrize('e_dependent, f_dependent, s_dependent', 
     [
-        # (True, True, True),
-        # (True, True, False),
-        # (True, False, True),
-        # (True, False, False),
-        # (False, True, True),
-        # (False, True, False),
-        # (False, False, True),
+        (True, True, True),
+        (True, True, False),
+        (True, False, True),
+        (True, False, False),
+        (False, True, True),
+        (False, True, False),
+        (False, False, True),
         (False, False, False),
     ]
 )
@@ -448,7 +494,7 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     pscan_block_out.backward(dout, retain_graph=True)
     pscan_block_di, i.grad = i.grad.clone(), None
     pscan_block_de, e.grad = e.grad.clone(), None
-    # pscan_block_df, f.grad = f.grad.clone(), None
+    pscan_block_df, f.grad = f.grad.clone(), None
     pscan_block_ds, s.grad = s.grad.clone(), None
 
     print("naive Vs pscan")
@@ -467,7 +513,7 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     print(f"out: {torch.norm(ref_out.float() - pscan_block_out.float())}")
     print(f"di: {torch.norm(ref_di.float() - pscan_block_di.float())}")
     print(f"de: {torch.norm(ref_de.float() - pscan_block_de.float())}")
-    # print(f"df: {torch.norm(ref_df.float() - pscan_block_df.float())}")
+    print(f"df: {torch.norm(ref_df.float() - pscan_block_df.float())}")
     print(f"ds: {torch.norm(ref_ds.float() - pscan_block_ds.float())}")
     
     
@@ -479,16 +525,20 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
 
 
 b, n, k, d = 6, 512, 32, 128
+b, n, k, d = 4, 512, 128, 128
+b, n, k, d = 32, 512, 128, 128
 device = "cuda:0"
 speed_configs = [triton.testing.Benchmark(
     x_names=['n'],
     x_vals=[2**i for i in range(9, 13)],
     line_arg='provider',
-    line_vals=["origin", "pscan", "pscan_torch", "pscan_block"],
-    line_names=["origin", "pscan", "pscan_torch", "pscan_block"],
+    # line_vals=["origin", "pscan", "pscan_torch", "pscan_block"],
+    # line_names=["origin", "pscan", "pscan_torch", "pscan_block"],
+    line_vals=["pscan_block"],
+    line_names=["pscan_block"],
     styles=[('red', '-'), ('orange', '-'), ('green', '-'), ('blue', '-'), ('black', '-')],
     ylabel='ms',
-    plot_name=f'mnet-batch{b}-n{n}-k{k}-d{d}-{mode}',
+    plot_name=f'mnet-batch{b}-k{k}-d{d}-{mode}',
     args={'b': b, 'k': k, 'd': d, 'dtype': torch.float16, 'mode': mode,}
 ) for mode in ['fwd', 'bwd']]
 @triton.testing.perf_report(speed_configs)
@@ -529,11 +579,13 @@ memory_configs = [triton.testing.Benchmark(
     x_names=['n'],
     x_vals=[2**i for i in range(9, 13)],
     line_arg='provider',
-    line_vals=["origin", "pscan", "pscan_torch", "pscan_block"],
-    line_names=["origin", "pscan", "pscan_torch", "pscan_block"],
+    # line_vals=["origin", "pscan", "pscan_torch", "pscan_block"],
+    # line_names=["origin", "pscan", "pscan_torch", "pscan_block"],
+    line_vals=["pscan_block"],
+    line_names=["pscan_block"],
     styles=[('red', '-'), ('orange', '-'), ('green', '-'), ('blue', '-'), ('black', '-')],
     ylabel='ms',
-    plot_name=f'mnet-batch{b}-n{n}-k{k}-d{d}-{mode}',
+    plot_name=f'mnet-batch{b}-k{k}-d{d}-{mode}',
     args={'b': b, 'k': k, 'd': d, 'dtype': torch.float16, 'mode': mode,}
 ) for mode in ['fwd', 'bwd']]
 @triton.testing.perf_report(memory_configs)
@@ -575,6 +627,6 @@ def bench_mnet_memory(b, n, k, d, mode, provider, dtype=torch.bfloat16, device="
 save_path = 'stat' 
 os.makedirs(save_path, exist_ok=True)
 # only works on post-Ampere GPUs right now
-# bench_mnet_speed.run(save_path=save_path, print_data=True)
-# bench_mnet_memory.run(save_path=save_path, print_data=True)
+bench_mnet_speed.run(save_path=save_path, print_data=True)
+bench_mnet_memory.run(save_path=save_path, print_data=True)
 # test_op(save_path='.', print_data=True)
