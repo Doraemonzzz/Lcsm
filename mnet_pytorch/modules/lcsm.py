@@ -378,7 +378,7 @@ class EOS(nn.Module):
             self.e_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
             self.s_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
             
-        self.o_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+        self.o_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
 
     @staticmethod
     def _build_slope_tensor(d: int):
@@ -486,7 +486,7 @@ class EOS(nn.Module):
             i = inter_state * i
             # k d
             f_di = -torch.exp(self.f.float())
-            f = torch.exp(torch.einsum("... k, ... k d -> ... k d", inter_state, f_di))
+            f = torch.exp(torch.einsum("... d, ... k d -> ... k d", inter_state, f_di))
             # b n k
             e = self.e_proj(x)
             # b n k
@@ -495,7 +495,7 @@ class EOS(nn.Module):
         return i, e, f, s
 
     def forward(self, x):
-        i, e, f, s = self.prepare(i, e, f, s)
+        i, e, f, s = self.prepare(x)
         
         o = pscan_block(i, e, f, s)
         
