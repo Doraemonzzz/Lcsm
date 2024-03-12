@@ -2,6 +2,7 @@ import torch
 
 from mnet_pytorch.utils import process
 
+
 def expand_and_shrink(i, e, f, s, m0=None):
     b, n, d = i.shape
     k = e.shape[-1]
@@ -22,6 +23,5 @@ def expand_and_shrink(i, e, f, s, m0=None):
         m = f_ * m + torch.einsum("... k, ... d -> ... k d", e_, i_)
         y = torch.einsum("... k d, ... k -> ... d", m, s_)
         output.append(y.unsqueeze(1))
-        
-    return torch.cat(output, dim=1)
 
+    return torch.cat(output, dim=1)

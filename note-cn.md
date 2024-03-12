@@ -7,14 +7,14 @@ $$
 \left[\begin{matrix}
 \mathbf y_1^\top \\
 \vdots \\
-\mathbf y_n^\top 
+\mathbf y_n^\top
 \end{matrix}
 \right]=\mathbf Y =f(\mathbf X)=
 f\left(
 \left[\begin{matrix}
 \mathbf x_1^\top \\
 \vdots \\
-\mathbf x_n^\top 
+\mathbf x_n^\top
 \end{matrix}
 \right]
 \right)\\
@@ -297,7 +297,7 @@ $$
 \mathbf m_{tB+k}&= \mathbf {\bar f}_{tB+k} \odot \sum_{j=0}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j}  \\
 &= \mathbf {\bar f}_{tB+k} \odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +
 \mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
-&=\frac{\mathbf {\bar f}_{tB+k}}{\mathbf {\bar f}_{(t-1)B} }  \odot \mathbf {\bar f}_{(t-1)B} 
+&=\frac{\mathbf {\bar f}_{tB+k}}{\mathbf {\bar f}_{(t-1)B} }  \odot \mathbf {\bar f}_{(t-1)B}
 \odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +\mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
 &= \frac{\mathbf {\bar f}_{tB+k}}{\mathbf {\bar f}_{(t-1)B} } \odot \mathbf M_{t-1}+
 \mathbf {\bar f}_{tB+k} \odot \sum_{j=(t-1)B+1}^{tB+k} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
@@ -320,7 +320,7 @@ $$
 &=\mathbf {\bar f}_{tB} \odot \sum_{j=0}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j}  \\
 &= \mathbf {\bar f}_{tB} \odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +
 \mathbf {\bar f}_{tB} \odot \sum_{j=(t-1)B+1}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
-&=\frac{\mathbf {\bar f}_{tB}}{\mathbf {\bar f}_{(t-1)B} }  \odot \mathbf {\bar f}_{(t-1)B} 
+&=\frac{\mathbf {\bar f}_{tB}}{\mathbf {\bar f}_{(t-1)B} }  \odot \mathbf {\bar f}_{(t-1)B}
 \odot \sum_{j=0}^{(t-1)B} \frac{\mathbf a_j}{\mathbf {\bar f}_j} +\mathbf {\bar f}_{tB} \odot \sum_{j=(t-1)B+1}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j} \\
 &= \frac{\mathbf {\bar f}_{tB}}{\mathbf {\bar f}_{(t-1)B} } \odot \mathbf M_{t-1}+
 \mathbf {\bar f}_{tB} \odot \sum_{j=(t-1)B+1}^{tB} \frac{\mathbf a_j}{\mathbf {\bar f}_j}
@@ -363,12 +363,12 @@ $$
 \begin{aligned}
 x_{n}
 &=a_{n+1} x_{n+1} + b_{n}\\
-&=a_{n+1}\left( 
+&=a_{n+1}\left(
  x_{n+1} + \frac{ b_{n}}{a_{n+1}}
 \right) \\
 x_{n-1}&= a_n x_n + b_{n-1}\\
-&= a_{n+1} a_n  \left( 
- x_{n+1} + \frac{ b_{n}}{a_{n+1}} + 
+&= a_{n+1} a_n  \left(
+ x_{n+1} + \frac{ b_{n}}{a_{n+1}} +
  \frac{b_{n-1}}{a_{n+1}a_n}
 \right) \\
 

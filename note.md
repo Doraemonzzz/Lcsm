@@ -10,13 +10,13 @@ $$
 \begin{bmatrix}
 \mathbf{y}_1^\top \\
 \vdots \\
-\mathbf{y}_n^\top 
+\mathbf{y}_n^\top
 \end{bmatrix}
 = \mathbf{Y} = f(\mathbf{X}) = f\left(
 \begin{bmatrix}
 \mathbf{x}_1^\top \\
 \vdots \\
-\mathbf{x}_n^\top 
+\mathbf{x}_n^\top
 \end{bmatrix}
 \right)
 $$

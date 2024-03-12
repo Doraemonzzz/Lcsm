@@ -1,8 +1,6 @@
+import mnet_cuda
 import torch
 from torch.autograd import Function
-from torch.utils.cpp_extension import load
-import os
-import mnet_cuda
 
 
 class MnetFunction(Function):
@@ -16,13 +14,13 @@ class MnetFunction(Function):
         e = e.contiguous()
         f = f.contiguous()
         s = s.contiguous()
-        
+
         b, n, d = i.shape
         k = e.shape[-1]
         m = torch.zeros(b, 1, k, d).to(i)
-        
+
         output = mnet_cuda.forward(i, e, f, s, m)
-        
+
         ctx.save_for_backward(i, e, f, s)
 
         return output
@@ -31,11 +29,11 @@ class MnetFunction(Function):
     def backward(ctx, do):
         do = do.contiguous()
         i, e, f, s = ctx.saved_tensors
-        
+
         b, n, d = i.shape
         k = e.shape[-1]
         m = torch.zeros(b, 1, k, d).to(i)
-        
+
         di, de, df, ds = mnet_cuda.backward(i, e, f, s, m)
 
         return di, de, df, ds

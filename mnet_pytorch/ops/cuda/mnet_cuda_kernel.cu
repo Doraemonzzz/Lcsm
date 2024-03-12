@@ -19,7 +19,7 @@
 // CUDA kernel for forward pass
 template <typename scalar_t>
 __global__ void mnet_forward_kernel(
-    const scalar_t* i, const scalar_t* e, const scalar_t* f, const scalar_t* s, 
+    const scalar_t* i, const scalar_t* e, const scalar_t* f, const scalar_t* s,
     const scalar_t* m, const scalar_t* o,
     int64_t b, int64_t n, int64_t k, int64_t d
 ) {
@@ -28,7 +28,7 @@ __global__ void mnet_forward_kernel(
     int64_t idy = blockIdx.y * blockDim.y + threadIdx.y;
     // feature
     int64_t idz = blockIdx.x * blockDim.x + threadIdx.x;
-    
+
 
     if (idy < b && idz < d) {
         scalar_t hidden_state = 0;
@@ -36,7 +36,7 @@ __global__ void mnet_forward_kernel(
         for (int64_t idx = 0; idx < n; ++idx) {
             int64_t index = idx * b * d + idy * d + idz;
             for (int64_t idu = 0; idu < k; ++idu) {
-                m = 
+                m =
             }
             hidden_state = lambda[index] * hidden_state + x[index];
             output[index] = hidden_state;
