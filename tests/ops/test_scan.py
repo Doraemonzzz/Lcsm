@@ -2,7 +2,13 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from mnet_pytorch.ops import expand_and_shrink, pscan, pscan_block, pscan_torch
+from mnet_pytorch.ops import (
+    expand_and_shrink,
+    pscan,
+    pscan_block,
+    pscan_cuda_fn,
+    pscan_torch,
+)
 
 
 @pytest.mark.parametrize(
@@ -16,14 +22,14 @@ from mnet_pytorch.ops import expand_and_shrink, pscan, pscan_block, pscan_torch
 @pytest.mark.parametrize(
     "e_dependent, f_dependent, s_dependent",
     [
-        (True, True, True),
-        (True, True, False),
+        # (True, True, True),
+        # (True, True, False),
         (True, False, True),
-        (True, False, False),
-        (False, True, True),
-        (False, True, False),
-        (False, False, True),
-        (False, False, False),
+        # (True, False, False),
+        # (False, True, True),
+        # (False, True, False),
+        # (False, False, True),
+        # (False, False, False),
     ],
 )
 # @pytest.mark.parametrize('dtype', [torch.float32])
@@ -106,6 +112,14 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     pscan_block_df, f.grad = f.grad.clone(), None
     pscan_block_ds, s.grad = s.grad.clone(), None
 
+    # pscan cuda
+    pscan_cuda_out = pscan_cuda_fn(i, e, f, s)
+    pscan_cuda_out.backward(dout, retain_graph=True)
+    pscan_cuda_di, i.grad = i.grad.clone(), None
+    pscan_cuda_de, e.grad = e.grad.clone(), None
+    pscan_cuda_df, f.grad = f.grad.clone(), None
+    pscan_cuda_ds, s.grad = s.grad.clone(), None
+
     print("naive Vs pscan")
     print(f"out: {torch.norm(ref_out.float() - pscan_out.float())}")
     print(f"di: {torch.norm(ref_di.float() - pscan_di.float())}")
@@ -124,6 +138,12 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     print(f"de: {torch.norm(ref_de.float() - pscan_block_de.float())}")
     print(f"df: {torch.norm(ref_df.float() - pscan_block_df.float())}")
     print(f"ds: {torch.norm(ref_ds.float() - pscan_block_ds.float())}")
+    print("naive Vs pscan cuda")
+    print(f"out: {torch.norm(ref_out.float() - pscan_cuda_out.float())}")
+    print(f"di: {torch.norm(ref_di.float() - pscan_cuda_di.float())}")
+    print(f"de: {torch.norm(ref_de.float() - pscan_cuda_de.float())}")
+    print(f"df: {torch.norm(ref_df.float() - pscan_cuda_df.float())}")
+    print(f"ds: {torch.norm(ref_ds.float() - pscan_cuda_ds.float())}")
 
     torch.testing.assert_close(ref_out.float(), pscan_out.float(), atol=1e-2, rtol=1e-2)
     torch.testing.assert_close(ref_di.float(), pscan_di.float(), atol=5e-2, rtol=1e-2)

@@ -5,7 +5,13 @@ import torch
 import torch.nn.functional as F
 import triton
 
-from mnet_pytorch.ops import expand_and_shrink, pscan, pscan_block, pscan_torch
+from mnet_pytorch.ops import (
+    expand_and_shrink,
+    pscan,
+    pscan_block,
+    pscan_cuda_fn,
+    pscan_torch,
+)
 
 b, n, k, d = 6, 512, 32, 128
 b, n, k, d = 4, 512, 128, 128
@@ -18,8 +24,8 @@ speed_configs = [
         line_arg="provider",
         # line_vals=["origin", "pscan", "pscan_torch", "pscan_block"],
         # line_names=["origin", "pscan", "pscan_torch", "pscan_block"],
-        line_vals=["pscan_block"],
-        line_names=["pscan_block"],
+        line_vals=["pscan_block", "pscan_cuda"],
+        line_names=["pscan_block", "pscan_cuda"],
         styles=[
             ("red", "-"),
             ("orange", "-"),
@@ -72,6 +78,8 @@ def bench_mnet_speed(b, n, k, d, mode, provider, dtype=torch.bfloat16, device="c
         fun = pscan_torch
     elif provider == "pscan_block":
         fun = pscan_block
+    elif provider == "pscan_cuda":
+        fun = pscan_cuda_fn
     fn = lambda: fun(i, e, f, s)
 
     if mode == "bwd":
@@ -98,8 +106,8 @@ memory_configs = [
         line_arg="provider",
         # line_vals=["origin", "pscan", "pscan_torch", "pscan_block"],
         # line_names=["origin", "pscan", "pscan_torch", "pscan_block"],
-        line_vals=["pscan_block"],
-        line_names=["pscan_block"],
+        line_vals=["pscan_block", "pscan_cuda"],
+        line_names=["pscan_block", "pscan_cuda"],
         styles=[
             ("red", "-"),
             ("orange", "-"),
@@ -151,6 +159,8 @@ def bench_mnet_memory(b, n, k, d, mode, provider, dtype=torch.bfloat16, device="
         fun = pscan_torch
     elif provider == "pscan_block":
         fun = pscan_block
+    elif provider == "pscan_cuda":
+        fun = pscan_cuda_fn
     fn = lambda: fun(i, e, f, s)
 
     if mode == "bwd":

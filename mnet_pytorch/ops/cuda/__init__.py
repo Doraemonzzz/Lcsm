@@ -1,1 +1,1 @@
-from .luru_function import LuruFunction
+from .pscan_fn import pscan_cuda_fn
