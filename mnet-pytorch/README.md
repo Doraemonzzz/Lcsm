@@ -90,3 +90,6 @@ dm3 = f4 * dm4 + s3
 dm2 = f3 * dm3 + s2
 dm1 = f2 * dm2 + s1
 ```
+
+## to do
+- [ ] mnet cuda
