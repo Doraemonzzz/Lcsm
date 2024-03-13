@@ -11,7 +11,12 @@ def pscan(i, e, f, s, m0=None):
     # s: b, n, k or k
     b, n, d = i.shape
     # construct memory
-    m_bar = torch.einsum("... k, ... d -> ... k d", e, i)  # b, n, k, d
+    # m_bar = torch.einsum("... k, ... d -> ... k d", e, i)  # b, n, k, d
+    if len(e.shape) != 2:
+        m_bar = e.unsqueeze(-1) * i.unsqueeze(-2)
+    else:
+        m_bar = e * i.unsqueeze(-2)
+
     if m0 == None:
         b, n, k, d = m_bar.shape
         m0 = torch.zeros(b, 1, k, d).to(m_bar)
@@ -28,6 +33,11 @@ def pscan(i, e, f, s, m0=None):
     log_m = f_star + log_m0_plus_m_star
     m = torch.exp(log_m).real[:, 1:].to(i.dtype)
 
-    o = torch.einsum("... k d, ... k -> ... d", m, s)
+    # o = torch.einsum("... k d, ... k -> ... d", m, s)
+    if len(s.shape) != 2:
+        o = (m * s.unsqueeze(-1)).sum(dim=-2)
+    else:
+        # ... k d, ... k d -> ... d
+        o = (m * s).sum(dim=-2)
 
     return o
