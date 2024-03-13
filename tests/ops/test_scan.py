@@ -20,21 +20,24 @@ from mnet_pytorch.ops import (
     ],
 )
 @pytest.mark.parametrize(
-    "e_dependent, f_dependent, s_dependent",
+    "e_dependent, f_dependent, f_learned, s_dependent",
     [
-        (True, True, True),
-        # (True, True, False),
-        # (True, False, True),
-        # (True, False, False),
-        # (False, True, True),
-        # (False, True, False),
-        # (False, False, True),
-        # (False, False, False),
+        # (True, True, True, True),     # ok
+        # (True, True, True, False),      # ok
+        # (True, False, True, True),    # ok
+        # (True, False, True, False),    # ok
+        # (False, True, True, True),    # ok
+        # (False, True, True, False),     # ok
+        # (False, False, True, True),   # ok
+        # (False, False, True, False),  # ok
+        (True, False, False, True),
     ],
 )
 # @pytest.mark.parametrize('dtype', [torch.float32])
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
-def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cuda:0"):
+def test_op(
+    b, n, k, d, e_dependent, f_dependent, f_learned, s_dependent, dtype, device="cuda:0"
+):
     torch.manual_seed(20)
     i = (
         torch.empty((b, n, d), dtype=dtype, device=device)
@@ -61,9 +64,18 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
             )
         ).requires_grad_()
     else:
-        f = F.sigmoid(
-            torch.empty((k, d), dtype=dtype, device=device).normal_(mean=0.0, std=0.5)
-        ).requires_grad_()
+        if f_learned:
+            f = F.sigmoid(
+                torch.empty((k, d), dtype=dtype, device=device).normal_(
+                    mean=0.0, std=0.5
+                )
+            ).requires_grad_()
+        else:
+            f = F.sigmoid(
+                torch.empty((k, d), dtype=dtype, device=device).normal_(
+                    mean=0.0, std=0.5
+                )
+            )
 
     if s_dependent:
         s = (
@@ -85,7 +97,8 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     ref_out.backward(dout, retain_graph=True)
     ref_di, i.grad = i.grad.clone(), None
     ref_de, e.grad = e.grad.clone(), None
-    ref_df, f.grad = f.grad.clone(), None
+    if f_learned:
+        ref_df, f.grad = f.grad.clone(), None
     ref_ds, s.grad = s.grad.clone(), None
 
     # pscan
@@ -93,7 +106,8 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     pscan_out.backward(dout, retain_graph=True)
     pscan_di, i.grad = i.grad.clone(), None
     pscan_de, e.grad = e.grad.clone(), None
-    pscan_df, f.grad = f.grad.clone(), None
+    if f_learned:
+        pscan_df, f.grad = f.grad.clone(), None
     pscan_ds, s.grad = s.grad.clone(), None
 
     # pscan torch
@@ -101,7 +115,8 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     pscan_torch_out.backward(dout, retain_graph=True)
     pscan_torch_di, i.grad = i.grad.clone(), None
     pscan_torch_de, e.grad = e.grad.clone(), None
-    pscan_torch_df, f.grad = f.grad.clone(), None
+    if f_learned:
+        pscan_torch_df, f.grad = f.grad.clone(), None
     pscan_torch_ds, s.grad = s.grad.clone(), None
 
     # pscan block
@@ -109,7 +124,8 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     pscan_block_out.backward(dout, retain_graph=True)
     pscan_block_di, i.grad = i.grad.clone(), None
     pscan_block_de, e.grad = e.grad.clone(), None
-    pscan_block_df, f.grad = f.grad.clone(), None
+    if f_learned:
+        pscan_block_df, f.grad = f.grad.clone(), None
     pscan_block_ds, s.grad = s.grad.clone(), None
 
     # pscan cuda
@@ -117,33 +133,38 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     pscan_cuda_out.backward(dout, retain_graph=True)
     pscan_cuda_di, i.grad = i.grad.clone(), None
     pscan_cuda_de, e.grad = e.grad.clone(), None
-    pscan_cuda_df, f.grad = f.grad.clone(), None
+    if f_learned:
+        pscan_cuda_df, f.grad = f.grad.clone(), None
     pscan_cuda_ds, s.grad = s.grad.clone(), None
 
     print("naive Vs pscan")
     print(f"out: {torch.norm(ref_out.float() - pscan_out.float())}")
     print(f"di: {torch.norm(ref_di.float() - pscan_di.float())}")
     print(f"de: {torch.norm(ref_de.float() - pscan_de.float())}")
-    print(f"df: {torch.norm(ref_df.float() - pscan_df.float())}")
+    if f_learned:
+        print(f"df: {torch.norm(ref_df.float() - pscan_df.float())}")
     print(f"ds: {torch.norm(ref_ds.float() - pscan_ds.float())}")
     print("naive Vs pscan torch")
     print(f"out: {torch.norm(ref_out.float() - pscan_torch_out.float())}")
     print(f"di: {torch.norm(ref_di.float() - pscan_torch_di.float())}")
     print(f"de: {torch.norm(ref_de.float() - pscan_torch_de.float())}")
-    print(f"df: {torch.norm(ref_df.float() - pscan_torch_df.float())}")
+    if f_learned:
+        print(f"df: {torch.norm(ref_df.float() - pscan_torch_df.float())}")
     print(f"ds: {torch.norm(ref_ds.float() - pscan_torch_ds.float())}")
     print("naive Vs pscan block")
     print(f"out: {torch.norm(ref_out.float() - pscan_block_out.float())}")
     print(f"di: {torch.norm(ref_di.float() - pscan_block_di.float())}")
     print(f"de: {torch.norm(ref_de.float() - pscan_block_de.float())}")
-    print(f"df: {torch.norm(ref_df.float() - pscan_block_df.float())}")
+    if f_learned:
+        print(f"df: {torch.norm(ref_df.float() - pscan_block_df.float())}")
     print(f"ds: {torch.norm(ref_ds.float() - pscan_block_ds.float())}")
     print("naive Vs pscan cuda")
     print(f"out: {torch.norm(ref_out.float() - pscan_cuda_out.float())}")
-    # print(f"di: {torch.norm(ref_di.float() - pscan_cuda_di.float())}")
-    # print(f"de: {torch.norm(ref_de.float() - pscan_cuda_de.float())}")
-    # print(f"df: {torch.norm(ref_df.float() - pscan_cuda_df.float())}")
-    # print(f"ds: {torch.norm(ref_ds.float() - pscan_cuda_ds.float())}")
+    print(f"di: {torch.norm(ref_di.float() - pscan_cuda_di.float())}")
+    print(f"de: {torch.norm(ref_de.float() - pscan_cuda_de.float())}")
+    if f_learned:
+        print(f"df: {torch.norm(ref_df.float() - pscan_cuda_df.float())}")
+    print(f"ds: {torch.norm(ref_ds.float() - pscan_cuda_ds.float())}")
 
     torch.testing.assert_close(ref_out.float(), pscan_out.float(), atol=1e-2, rtol=1e-2)
     torch.testing.assert_close(ref_di.float(), pscan_di.float(), atol=5e-2, rtol=1e-2)
