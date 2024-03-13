@@ -22,9 +22,9 @@ from mnet_pytorch.ops import (
 @pytest.mark.parametrize(
     "e_dependent, f_dependent, s_dependent",
     [
-        # (True, True, True),
+        (True, True, True),
         # (True, True, False),
-        (True, False, True),
+        # (True, False, True),
         # (True, False, False),
         # (False, True, True),
         # (False, True, False),
@@ -140,10 +140,10 @@ def test_op(b, n, k, d, e_dependent, f_dependent, s_dependent, dtype, device="cu
     print(f"ds: {torch.norm(ref_ds.float() - pscan_block_ds.float())}")
     print("naive Vs pscan cuda")
     print(f"out: {torch.norm(ref_out.float() - pscan_cuda_out.float())}")
-    print(f"di: {torch.norm(ref_di.float() - pscan_cuda_di.float())}")
-    print(f"de: {torch.norm(ref_de.float() - pscan_cuda_de.float())}")
-    print(f"df: {torch.norm(ref_df.float() - pscan_cuda_df.float())}")
-    print(f"ds: {torch.norm(ref_ds.float() - pscan_cuda_ds.float())}")
+    # print(f"di: {torch.norm(ref_di.float() - pscan_cuda_di.float())}")
+    # print(f"de: {torch.norm(ref_de.float() - pscan_cuda_de.float())}")
+    # print(f"df: {torch.norm(ref_df.float() - pscan_cuda_df.float())}")
+    # print(f"ds: {torch.norm(ref_ds.float() - pscan_cuda_ds.float())}")
 
     torch.testing.assert_close(ref_out.float(), pscan_out.float(), atol=1e-2, rtol=1e-2)
     torch.testing.assert_close(ref_di.float(), pscan_di.float(), atol=5e-2, rtol=1e-2)
