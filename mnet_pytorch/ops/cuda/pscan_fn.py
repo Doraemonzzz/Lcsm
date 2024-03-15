@@ -48,7 +48,7 @@ class ScanCuda(Function):
         input = input.contiguous()
         decay = decay.contiguous()
 
-        m = pscan_cuda.forward(input, decay, is_fdd)
+        m = pscan_cuda.forward(input, decay.to(input.dtype), is_fdd)
 
         m = rearrange(m, "... (k d) -> ... k d", k=k)
 
@@ -116,7 +116,9 @@ class ScanCuda(Function):
         input = input.contiguous()
         decay = decay.contiguous()
 
-        dm, df = pscan_cuda.backward(input, decay, m, grad, is_fdd, learned)
+        dm, df = pscan_cuda.backward(
+            input, decay.to(input.dtype), m, grad, is_fdd, learned
+        )
 
         dm, df = map(lambda x: rearrange(x, "... (k d) -> ... k d", k=k), [dm, df])
 
