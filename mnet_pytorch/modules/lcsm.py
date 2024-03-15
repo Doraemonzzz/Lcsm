@@ -193,7 +193,6 @@ class EOS(nn.Module):
         elif self.t_type == 2:
             return F.sigmoid(x)
         elif self.t_type == 3:
-            print("aaa")
             return 1 + F.elu(x)
         elif self.t_type == 4:
             return F.silu(x)
@@ -215,6 +214,9 @@ class EOS(nn.Module):
                 s = self.s_proj(x)
             else:
                 s = self.s
+
+            e = self.transform(e)
+            s = self.transform(s)
 
             if self.f_type == 0:
                 # k d
