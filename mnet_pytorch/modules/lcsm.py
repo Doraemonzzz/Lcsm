@@ -283,9 +283,6 @@ class EOS(nn.Module):
 
         o = self.norm(o)
 
-        # gate = F.sigmoid(self.gate(x))
-        # o = o * gate
-
         o = self.o_proj(o)
 
         return o
