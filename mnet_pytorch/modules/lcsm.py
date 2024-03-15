@@ -22,6 +22,7 @@ class EOS(nn.Module):
         f_learned=True,
         ssm_dim=16,
         tau=16,
+        t_type=0,  # transform type
         **kwargs,
     ):
         super().__init__()
@@ -34,6 +35,7 @@ class EOS(nn.Module):
         self.f_type = f_type
         self.s_type = s_type
         self.f_learned = f_learned
+        self.t_type = t_type
 
         self.i_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.tau = tau
@@ -165,6 +167,18 @@ class EOS(nn.Module):
         slopes = torch.tensor(get_slopes(d))
 
         return slopes
+
+    def transform(self, x):
+        if self.t_type == 0:
+            return x
+        elif self.t_type == 1:
+            return F.relu(x)
+        elif self.t_type == 2:
+            return F.sigmoid(x)
+        elif self.t_type == 3:
+            return 1 + F.elu(x)
+        elif self.t_type == 4:
+            return F.silu(x)
 
     def prepare(self, x):
         k = self.expand_dim
