@@ -23,6 +23,7 @@ class EOS(nn.Module):
         ssm_dim=16,
         tau=16,
         t_type=0,  # transform type
+        use_tau=True,
         **kwargs,
     ):
         super().__init__()
@@ -39,6 +40,7 @@ class EOS(nn.Module):
 
         self.i_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.tau = tau
+        self.use_tau = use_tau
 
         if self.c_type == 1:  # linear
             ##### expand
@@ -63,12 +65,27 @@ class EOS(nn.Module):
                 # d, k -> k d
                 self.f1_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
                 self.f2_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                if not self.use_tau:
+                    self.gamma_f1 = nn.Parameter(
+                        self._build_slope_tensor(embed_dim), requires_grad=False
+                    )
+                    self.gamma_f2 = nn.Parameter(
+                        self._build_slope_tensor(expand_dim), requires_grad=False
+                    )
             elif self.f_type == 2:
                 # 1 d
                 self.f_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+                if not self.use_tau:
+                    self.gamma_f = nn.Parameter(
+                        self._build_slope_tensor(embed_dim), requires_grad=False
+                    )
             elif self.f_type == 3:
                 # k 1
                 self.f_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                if not self.use_tau:
+                    self.gamma_f = nn.Parameter(
+                        self._build_slope_tensor(expand_dim), requires_grad=False
+                    )
             elif self.f_type == 4:  # data independent
                 if self.f_learned:
                     f = torch.randn(expand_dim) * 0.1
@@ -176,6 +193,7 @@ class EOS(nn.Module):
         elif self.t_type == 2:
             return F.sigmoid(x)
         elif self.t_type == 3:
+            print("aaa")
             return 1 + F.elu(x)
         elif self.t_type == 4:
             return F.silu(x)
@@ -201,23 +219,37 @@ class EOS(nn.Module):
             if self.f_type == 0:
                 # k d
                 if self.f_learned:
-                    f = F.logsigmoid(self.f) / self.tau
+                    if self.use_tau:
+                        f = F.logsigmoid(self.f) / self.tau
+                    else:
+                        f = -self.f
                 else:
                     f = -self.f
                 f = torch.exp(f)
 
             elif self.f_type == 1:
                 # d, k -> k d
-                f1 = F.logsigmoid(self.f1_proj(x)) / self.tau
-                f2 = F.logsigmoid(self.f2_proj(x)) / self.tau
-                f = torch.exp(torch.einsum("... d, ... k -> ... k d", f1, f2))
+                if self.use_tau:
+                    f1 = F.logsigmoid(self.f1_proj(x)) / self.tau
+                    f2 = F.logsigmoid(self.f2_proj(x)) / self.tau
+                else:
+                    f1 = F.sigmoid(self.f1_proj(x)) * self.gamma_f1
+                    f2 = F.sigmoid(self.f2_proj(x)) * self.gamma_f2
+                # ... d, ... k -> ... k d
+                f = torch.exp(f1.unsqueeze(-2) + f2.unsqueeze(-1))
             elif self.f_type == 2:
                 # 1 d
-                f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
+                if self.use_tau:
+                    f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
+                else:
+                    f = F.sigmoid(self.f_proj(x)) * self.gamma_f
                 f = repeat(f, "... d -> ... k d", k=k)
             elif self.f_type == 3:
                 # k 1
-                f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
+                if self.use_tau:
+                    f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
+                else:
+                    f = F.sigmoid(self.f_proj(x)) * self.gamma_f
                 f = repeat(f, "... k -> ... k d", d=d)
                 # f = repeat(f, "... -> b n ...", b=b, n=n)
             elif self.f_type == 4:  # data independent
@@ -292,7 +324,6 @@ class EOS(nn.Module):
 
     def forward(self, x):
         i, e, f, s = self.prepare(x)
-
         o = pscan_cuda_fn(i, e, f, s)
 
         o = self.norm(o)
