@@ -196,6 +196,10 @@ class EOS(nn.Module):
             return 1 + F.elu(x)
         elif self.t_type == 4:
             return F.silu(x)
+        elif self.t_type == 5:
+            return F.elu(x)
+        elif self.t_type == 6:
+            return F.relu(x) ** 2
 
     def prepare(self, x):
         k = self.expand_dim
