@@ -181,11 +181,11 @@ class EOS(nn.Module):
                 )
 
         # h
-        slopes = torch.tensor(get_slopes(d))
+        slopes = -torch.tensor(get_slopes(d))
 
         return slopes
 
-    def transform(self, x):
+    def transform(self, x, eps=10):
         if self.t_type == 0:
             return x
         elif self.t_type == 1:
@@ -200,6 +200,8 @@ class EOS(nn.Module):
             return F.elu(x)
         elif self.t_type == 6:
             return F.relu(x) ** 2
+        elif self.t_type == 7:
+            return x**2
 
     def prepare(self, x):
         k = self.expand_dim
@@ -248,14 +250,14 @@ class EOS(nn.Module):
                 if self.use_tau:
                     f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
                 else:
-                    f = F.sigmoid(self.f_proj(x)) * self.gamma_f
+                    f = torch.exp(F.sigmoid(self.f_proj(x)) * self.gamma_f)
                 f = repeat(f, "... d -> ... k d", k=k)
             elif self.f_type == 3:
                 # k 1
                 if self.use_tau:
                     f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
                 else:
-                    f = F.sigmoid(self.f_proj(x)) * self.gamma_f
+                    f = torch.exp(F.sigmoid(self.f_proj(x)) * self.gamma_f)
                 f = repeat(f, "... k -> ... k d", d=d)
                 # f = repeat(f, "... -> b n ...", b=b, n=n)
             elif self.f_type == 4:  # data independent
