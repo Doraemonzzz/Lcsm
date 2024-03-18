@@ -15,9 +15,9 @@ class ScanCuda(Function):
         # s: b, n, k or k or k, d
 
         i = i.contiguous()
-        e = e.contiguous()
-        f = f.contiguous()
-        s = s.contiguous()
+        e = e.to(i.dtype).contiguous()
+        f = f.to(i.dtype).contiguous()
+        s = s.to(i.dtype).contiguous()
 
         b, n, d = i.shape
         if len(e.shape) != 2:
@@ -63,14 +63,14 @@ class ScanCuda(Function):
             output = (m * s).sum(dim=-2)
         # output = torch.einsum("... k d, ... k -> ... d", m, s)
 
-        ctx.save_for_backward(i, e, f, s, m)
+        ctx.save_for_backward(i, e, f, s, m.to(i.dtype))
 
         return output
 
     @staticmethod
     def backward(ctx, do):
-        do = do.contiguous()
         i, e, f, s, m = ctx.saved_tensors
+        do = do.contiguous().to(i.dtype)
 
         b, n, d = i.shape
         if len(e.shape) != 2:
@@ -117,10 +117,13 @@ class ScanCuda(Function):
         decay = decay.contiguous()
 
         dm, df = pscan_cuda.backward(
-            input, decay.to(input.dtype), m, grad, is_fdd, learned
+            input, decay.to(input.dtype), m, grad.to(input.dtype), is_fdd, learned
         )
 
         dm, df = map(lambda x: rearrange(x, "... (k d) -> ... k d", k=k), [dm, df])
+
+        dm = dm.to(i.dtype)
+        df = df.to(i.dtype)
 
         if len(s.shape) != 2:
             ds = torch.einsum("... k d, ... d -> ... k", m, do)
