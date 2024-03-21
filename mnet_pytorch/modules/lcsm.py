@@ -136,6 +136,10 @@ class EOS(nn.Module):
                 )
                 self.theta = nn.Parameter(theta, requires_grad=False)
                 self.theta_cache = torch.empty(0)
+            elif self.f_type == 12:
+                # cum softmax
+                assert self.e_type == 1 and self.s_type == 1
+                self.f_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
 
             ##### shrink
             if self.s_type == 1:
@@ -313,6 +317,18 @@ class EOS(nn.Module):
                     x.dtype
                 )
                 f = self.f
+            elif self.f_type == 12:
+                # cum softmax
+                f_ = torch.clamp(self.f_proj(x), min=-10, max=10).to(torch.float32)
+                f_logexpcumsum = torch.cat(
+                    [-1e5 * torch.ones(b, 1, k).to(x), torch.logcumsumexp(f_, dim=1)],
+                    dim=1,
+                )
+                f = torch.exp(f_logexpcumsum[:, :n] - f_logexpcumsum[:, 1:])
+                e = (1 - f) * e
+                f = repeat(f, "... k -> ... k d", d=d)
+                i = i.to(torch.float32)
+                s = s.to(torch.float32)
         else:
             # b n d
             inter_state = F.softplus(self.inter_proj(x))
@@ -332,7 +348,7 @@ class EOS(nn.Module):
 
     def forward(self, x):
         i, e, f, s = self.prepare(x)
-        o = pscan_cuda_fn(i, e, f, s)
+        o = pscan_cuda_fn(i, e, f, s).to(x.dtype)
 
         o = self.norm(o)
 
