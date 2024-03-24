@@ -51,10 +51,11 @@ $$
 - output gate $\mathbf o_t \in \mathbb R^{d}$;
 
 (new version)
-- memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
-- forget state $\mathbf f_t \in \mathbb R^{k\times ？}$;
-  - may be shock gate?
 
+收到之前工作的启发，我们将序列建模定义为三个过程，Expand, Oscillation, Shrink(EOS)，并定义如下状态：
+
+- memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
+- oscillation state $\mathbf o_t \in \mathbb R^{k\times ？}$;
 - expand state $\mathbf e_t \in \mathbb R^{k}$;
 - input state $\mathbf i_t \in \mathbb R^{d}$;
 - shrink state $\mathbf s_t \in \mathbb R^{k}$;
@@ -65,7 +66,7 @@ input state和expand state利用外积到新的memory $\bar {\mathbf m}_t=\mathb
 
 然后利用下式进行更新（$\mathbf m_0$初始化为$\mathbf 0\in \mathbb R^{k\times d}$）：
 $$
-\mathbf m_{t}=f(\mathbf f_t , \mathbf m_{t-1}) + \mathbf e_t \mathbf i_t^\top.
+\mathbf m_{t}=f(\mathbf o_t , \mathbf m_{t-1}) + \mathbf e_t \mathbf i_t^\top.
 $$
 其中$f=\odot$（逐元素乘，此时$?=d$）或$f=.$（矩阵乘法，此时$?=k$）。
 
@@ -75,7 +76,7 @@ $$
 $$
 forget state, input state, expand state, shrink state都是通过$\mathbf  x_t$计算得到(或者不依赖于$\mathbf x_t$)。
 
-为了方便后续讨论，我们暂且将该方法记为MNet(Memory Network)。我们称该过程为：expand, forget, then shrink.
+为了方便后续讨论，我们暂且将该方法记为LCSM。我们称该过程为：Expand, Oscillation, Shrink (EOS).
 
 
 
@@ -83,16 +84,18 @@ forget state, input state, expand state, shrink state都是通过$\mathbf  x_t$�
 
 上述的定义看起来有点古怪（但思路和普通的RNN也没什么区别？），在这节中，我们将指出上述定义包含了很多被广泛使用的序列建模方式，我们将各个元素的对应关系列在下表中：
 
-| method           | shrink state                    | forget state                                    | expand state                      | input state                     | memory size  | $f$                   |
-| ---------------- | ------------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------- | ------------ | ----------------------- |
-| Linear Attention | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | matrix production       |
-| S4               | $\mathbf C\in \mathbb R^ k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^1$   | $k\times 1$  | matrix production       |
-| S5               | $\mathbf C\in \mathbb R^k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^d$   | $k \times d$ | matrix production       |
-| TNL              | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf \lambda \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | matrix production       |
-| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times d$  | element wise production |
-| RWKV | $\mathbf R_t \in \mathbb R^1$ | $\exp(-w ) \in \mathbb R^{1\times 1}$ | $\exp(\mathbf k_t) \in \mathbb R^{1}$ | $\mathbf v_t \mathbf \in \mathbb R^1$ | $1\times 1$ | element wise production / matrix  production |
-| Cosformer | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\theta) \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | matrix production |
-| Lrpe | $\mathbf q_t\in \mathbb R^{k}$ | $\Lambda =\mathrm{diag}\{\exp(i\theta_1),\ldots, \exp(i\theta_k) \}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | matrix production |
+对于$f$，我们用1表示$f=\odot$，用2表示$f=.$，$\mathbf 1^{(k)}\in \mathbb R^k, \mathbf 1^{(k)}_j = 1,j=1,\ldots, k, \mathbf J^{(k)}=\mathbf 1^{(k)}{\mathbf 1^{(k)}}^\top$
+
+| method           | shrink state                    | oscillation state                         | expand state                      | input state                     | memory size  | $f$                |
+| ---------------- | ------------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------- | ------------ | ------------ |
+| Linear Attention | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf J^{(k)}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | 1     |
+| S4               | $\mathbf C\in \mathbb R^ k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^1$   | $k\times 1$  | 2      |
+| S5               | $\mathbf C\in \mathbb R^k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^d$   | $k \times d$ | 2      |
+| TNL              | $\mathbf q_t\in \mathbb R^{k}$ | $\lambda \mathbf J^{(k)}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | 1      |
+| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times d$  | 1 |
+| RWKV-4 | $\mathbf R_t \in \mathbb R^1$ | $\exp(-w ) \in \mathbb R^{1\times 1}$ | $\exp(\mathbf k_t) \in \mathbb R^{1}$ | $\mathbf v_t \mathbf \in \mathbb R^1$ | $1\times 1$ | 1 |
+| Cosformer | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\theta)\mathbf J^{(k)}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | 1 |
+| Lrpe | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\Theta) {\mathbf 1^{(k)}}^{\top}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | 1 |
 
 
 
@@ -156,7 +159,7 @@ $$
 
 
 
-## RWKV[6]
+## RWKV-4[6]
 
 我们忽略RWKV的分母项，那么RWKV的递推式可以简化为：
 $$
@@ -220,9 +223,22 @@ $$
 
 
 
+# 简化
+
+为了简化讨论，当$f=.$时候，我们假设$\mathbf o_t$可对角化，这在实际中是一个常见的假设，cite Dss，此时$\mathbf o_t=\text{Diag}\{{\mathbf {\bar o_ t}}\}, \mathbf {\bar {o}_t}\in \mathbb R^{k}$：
+$$
+\mathbf m_{t}=\mathbf o_t  \mathbf m_{t-1} + \mathbf e_t \mathbf i_t^\top
+=\left( \mathbf {\bar {o}_t}{\mathbf 1^{(k)}}^\top \right) \odot \mathbf m_{t-1} + \mathbf e_t \mathbf i_t^\top.
+$$
+所以不失一般性，我们在正文中只考虑$f=\odot$的情况，并在附录中讨论$\mathbf o_t$不可对角化的几个例子。
+
+
+
+
+
 # Backward
 
-现在已经定义了Mnet的Forward形式，接下来就是Backward形式，为了方便叙述，我们将$f=\odot$的情形称为Type1，$f=.$的形式称为Type2。
+现在已经定义了LCSM的Forward形式，接下来就是Backward形式，为了方便叙述，我们将$f=\odot$的情形称为Type1，$f=.$的形式称为Type2。
 
 Type1:
 $$
@@ -234,6 +250,7 @@ $$
 \mathbf m_{t}=\mathbf f_t\mathbf m_{t-1} + \mathbf e_t \mathbf i_t^\top,\\
 \mathbf y_t =\mathbf m_t^{\top} \mathbf s_t
 $$
+
 
 
 ## Type1
@@ -260,7 +277,69 @@ $$
 \mathbf {di}_{t}= \mathbf {dm}_{t}^{\top} \mathbf e_t \in \mathbb R^{d}. \\
 $$
 
-(need check)
+
+
+# 如何计算state
+
+另一个问题是如何计算shrink state, oscillation state,expand state：
+
+- 通过SSM参数化的形式计算，以及nn.Linear计算；
+- 对shrink state, expand state是否使用激活函数；
+  - 类似linear attention中的kernel function；
+- oscillation state的计算方式：我们利用einsum的形式分别比较了各种形式的构造方式；
+
+
+
+
+
+# 实验分类
+
+## 是否需要特殊构造
+
+在这个部分，我们比较了SSM参数化和nn.Linear参数化的区别。
+
+
+
+## 是否data dependent
+
+通过对表格的总结，我们可以看出来对Lcsm的分类首先可以分为shrink state, oscillation state,expand state是否依赖于输入（即是否含有下标$t$），对于oscillation state，我们还考虑了几个特殊情况，即使用复数，不可学习的data independent，全1的情形共11种情况。对于data dependent的情况，我们假设oscillation state的每个元素属于$[0, 1]$，并且用$\mathrm{sigmoid(x)}^{1/\tau}$计算，关于$\tau$的实验将在后续进行讨论，对于data independent的情况，我们使用alibi的方式进行初始化。
+
+
+
+## oscillation state的构造方式
+
+要得到$k\times d$的oscillation state，有多种构造方式，我们通过einsum的形式列举了如下几种可能性。
+
+
+
+## activation function test
+
+为了比较激活函数是否有作用，我们测试了一些主流的激活函数。
+
+
+
+## tau test
+
+$\tau $可以控制震荡速率，所以在此我们也测试了其性能。
+
+
+
+
+
+## 实验
+
+我们在wikitext和mqar上进行了实验，结果如下。
+
+
+
+- wikitext
+- 
+
+
+
+
+
+
 
 
 
