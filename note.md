@@ -6,6 +6,7 @@ This article aims to summarize and categorize common sequence mapping methods.
 
 Consider a sequence mapping $ f: \mathbb{R}^{n \times d} \to \mathbb{R}^{n \times d} $, or $ \mathbf{Y} = f(\mathbf{X}) $:
 
+
 $$
 \begin{bmatrix}
 \mathbf{y}_1^\top \\
