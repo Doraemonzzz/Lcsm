@@ -95,6 +95,7 @@ For convenience in later discussions, we temporarily refer to this method as MNe
 
 The above definitions may seem a bit peculiar (but the idea is not much different from regular RNN), in this section, we will point out that the above definition encompasses many widely used sequence modeling methods. We will list the correspondence of each element in the table below:
 
+For $f$, we use 1 to represent $f=\odot$ and 2 to represent $f=.$. Let $\mathbf 1^{(k)}\in \mathbb R^k$, where $\mathbf 1^{(k)}_j = 1$ for $j=1,\ldots, k$, and $\mathbf J^{(k)}=\mathbf 1^{(k)}{\mathbf 1^{(k)}}^\top$.
 
 | method           | shrink state                    | oscillation state                         | expand state                      | input state                     | memory size  | $f$                |
 | ---------------- | ------------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------- | ------------ | ------------ |
