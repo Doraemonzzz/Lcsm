@@ -52,10 +52,10 @@ $$
 
 (new version)
 
-收到之前工作的启发，我们将序列建模定义为三个过程，Expand, Oscillation, Shrink(EOS)，并定义如下状态：
+受到之前工作的启发，我们将序列建模定义为三个过程，Expand, Oscillation, Shrink(EOS)，并定义如下状态：
 
 - memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
-- oscillation state $\mathbf o_t \in \mathbb R^{k\times ？}$;
+- oscillation state $\mathbf o_t \in \mathbb R^{k\times ?}$;
 - expand state $\mathbf e_t \in \mathbb R^{k}$;
 - input state $\mathbf i_t \in \mathbb R^{d}$;
 - shrink state $\mathbf s_t \in \mathbb R^{k}$;
@@ -333,7 +333,7 @@ $\tau $可以控制震荡速率，所以在此我们也测试了其性能。
 
 
 - wikitext
-- 
+-
 
 
 

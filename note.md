@@ -59,11 +59,10 @@ Inspired by RNN, we construct sequence mapping using memory:
 - input state $\mathbf u_t \in \mathbb R^{d}$;
 - output gate $\mathbf o_t \in \mathbb R^{d}$;
 
-(new version)
+Inspired by previous work, we define sequence modeling as three processes: Expand, Oscillation, Shrink (EOS), and define the following states:
 
 - memory state $\mathbf m_t \in \mathbb R^{k\times d}$；
-- forget state $\mathbf f_t \in \mathbb R^{k\times ？}$;
-  - may be shock gate?
+- oscillation state $\mathbf o_t \in \mathbb R^{k\times ?}$;
 
 - expand state $\mathbf e_t \in \mathbb R^{k}$;
 - input state $\mathbf i_t \in \mathbb R^{d}$;
@@ -76,7 +75,7 @@ Input state and expand state are used to calculate the new memory $ \bar{\mathbf
 Then update using the following equation ($ \mathbf{m}_0 $ is initialized to $ \mathbf{0} \in \mathbb{R}^{k \times d} $):
 
 $$
-\mathbf{m}_{t} = f(\mathbf{f}_t , \mathbf{m}_{t-1}) + \mathbf{e}_t \mathbf{i}_t^\top
+\mathbf{m}_{t} = f(\mathbf{o}_t , \mathbf{m}_{t-1}) + \mathbf{e}_t \mathbf{i}_t^\top
 $$
 
 where $ f = \odot $ (element-wise multiplication, in this case $ ? = d $) or $ f = . $ (matrix multiplication, in this case $ ? = k $).
@@ -89,22 +88,23 @@ $$
 
 Forget state, input state, expand state, shrink state are all calculated (or independent of $ \mathbf{x}_t $) based on $ \mathbf{x}_t $.
 
-For convenience in later discussions, we temporarily refer to this method as MNet (Memory Network). We call this process: **expand, forget, then shrink**.
+For convenience in later discussions, we temporarily refer to this method as MNet (Memory Network). We call this process: **Expand, Oscillation, Shrink (EOS)**.
 
 # Example
 
 The above definitions may seem a bit peculiar (but the idea is not much different from regular RNN), in this section, we will point out that the above definition encompasses many widely used sequence modeling methods. We will list the correspondence of each element in the table below:
 
-| Method           | Shrink State                   | Forget State                                   | Expand State                     | Input State                    | Memory Size  | $f$                   |
-| ---------------- | ------------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------ | ------------ | ----------------------- |
-| Linear Attention | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | Matrix Production       |
-| S4               | $\mathbf C\in \mathbb R^ k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^1$   | $k\times 1$  | Matrix Production       |
-| S5               | $\mathbf C\in \mathbb R^k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^d$   | $k \times d$ | Matrix Production       |
-| TNL              | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf \lambda \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | Matrix Production       |
-| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times d$  | Element-wise Production |
-| RWKV | $\mathbf R_t \in \mathbb R^1$ | $\exp(-w ) \in \mathbb R^{1\times 1}$ | $\exp(\mathbf k_t) \in \mathbb R^{1}$ | $\mathbf v_t \mathbf \in \mathbb R^1$ | $1\times 1$ | Element-wise Production / Matrix  Production |
-| Cosformer | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\theta) \mathbf I\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | Matrix Production |
-| Lrpe | $\mathbf q_t\in \mathbb R^{k}$ | $\Lambda =\mathrm{diag}\{\exp(i\theta_1),\ldots, \exp(i\theta_k) \}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | Matrix Production |
+
+| method           | shrink state                    | oscillation state                         | expand state                      | input state                     | memory size  | $f$                |
+| ---------------- | ------------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------- | ------------ | ------------ |
+| Linear Attention | $\mathbf q_t\in \mathbb R^{k}$ | $\mathbf J^{(k)}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | 1     |
+| S4               | $\mathbf C\in \mathbb R^ k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^1$   | $k\times 1$  | 2      |
+| S5               | $\mathbf C\in \mathbb R^k $   | $\mathbf A\in \mathbb R^{k\times k}$           | $\mathbf B\in \mathbb R^{k}$    | $\mathbf u_t \in \mathbb R^d$   | $k \times d$ | 2      |
+| TNL              | $\mathbf q_t\in \mathbb R^{k}$ | $\lambda \mathbf J^{(k)}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$  | 1      |
+| Mamba            | $\mathbf C_t\in \mathbb R^k $ | $\mathbf A_t\in \mathbb R^{k\times k}$         | $\mathbf B_t\in \mathbb R^{k}$  | $\mathbf u_t \in \mathbb R^d$   | $k\times d$  | 1 |
+| RWKV-4 | $\mathbf R_t \in \mathbb R^1$ | $\exp(-w ) \in \mathbb R^{1\times 1}$ | $\exp(\mathbf k_t) \in \mathbb R^{1}$ | $\mathbf v_t \mathbf \in \mathbb R^1$ | $1\times 1$ | 1 |
+| Cosformer | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\theta)\mathbf J^{(k)}\in \mathbb R^{k\times k}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | 1 |
+| Lrpe | $\mathbf q_t\in \mathbb R^{k}$ | $\exp(i\Theta) {\mathbf 1^{(k)}}^{\top}$ | $\mathbf k_t \in \mathbb R^{k}$ | $\mathbf v_t \in \mathbb R^{d}$ | $k\times d$ | 1 |
 
 
 
@@ -166,7 +166,7 @@ $$
 \mathbf{y}_t=\mathbf{m}_t^{\top} \mathbf{C_t} .
 $$
 
-## RWKV [6]
+## RWKV-4 [6]
 
 If we ignore the denominator of RWKV, the recurrence equation can be simplified to:
 $$
@@ -228,6 +228,14 @@ $$
 \end{aligned}
 $$
 
+# Simplification
+
+To simplify the discussion, when $f=.$, we assume that $\mathbf o_t$ is diagonalizable, which is a common assumption in practice, cite Dss. In this case, $\mathbf o_t=\text{Diag}\{{\mathbf {\bar o_ t}}\}, \mathbf {\bar {o}_t}\in \mathbb R^{k}$:
+$$
+\mathbf m_{t}=\mathbf o_t  \mathbf m_{t-1} + \mathbf e_t \mathbf i_t^\top
+=\left( \mathbf {\bar {o}_t}{\mathbf 1^{(k)}}^\top \right) \odot \mathbf m_{t-1} + \mathbf e_t \mathbf i_t^\top.
+$$
+Therefore, without loss of generality, we only consider the case where $f=\odot$ in the main text and discuss a few examples where $\mathbf o_t$ is not diagonalizable in the appendix.
 
 # Backward
 
@@ -272,6 +280,42 @@ $$
 
 (need check)
 
+# How to Calculate State
+
+Another question is how to calculate the shrink state, oscillation state, and expand state:
+
+- Calculated through the parameterized form of SSM, as well as through nn.Linear computation;
+- Whether to use activation functions for shrink state and expand state;
+  - Similar to the kernel function in linear attention;
+- The calculation method for the oscillation state: We have compared various forms of construction using the einsum form.
+
+# Experimental Classification
+
+## Need for Special Construction
+
+In this section, we compared the differences between SSM parameterization and nn.Linear parameterization.
+
+## Data Dependency
+
+By summarizing the table, we can see that the classification of Lcsm first can be divided into whether the shrink state, oscillation state, and expand state depend on the input (i.e., whether it contains the subscript $t$). For the oscillation state, we also considered several special cases, namely using complex numbers, non-learnable data-independent, and the all-ones scenario totaling 11 situations. For data-dependent cases, we assume that each element of the oscillation state belongs to $[0, 1]$ and is calculated using $\mathrm{sigmoid(x)}^{1/\tau}$. Experiments regarding $\tau$ will be discussed later. For data-independent cases, we use the method of initialization with alibi.
+
+## Construction Methods of Oscillation State
+
+To obtain a $k\times d$ oscillation state, there are several construction methods. We have listed the following possibilities through the form of einsum.
+
+## Activation Function Test
+
+To compare whether activation functions have an effect, we tested some mainstream activation functions.
+
+## Tau Test
+
+$\tau$ can control the oscillation rate, so we also tested its performance here.
+
+## Experiments
+
+We conducted experiments on wikitext and mqar, with the following results:
+
+- wikitext
 
 
 # Fast computation
