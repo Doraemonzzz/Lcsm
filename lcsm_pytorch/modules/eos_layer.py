@@ -5,24 +5,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import repeat
 
-from mnet_pytorch.ops import pscan_cuda_fn
-from mnet_pytorch.utils import print_module
+from lcsm_pytorch.ops import pscan_cuda_fn
+from lcsm_pytorch.utils import print_module
 
 
-class EOS(nn.Module):
+class EosLayer(nn.Module):
     def __init__(
         self,
         embed_dim=512,
         expand_dim=8,
         bias=False,
-        c_type=0,  # compute type, 1: linear layer 2: ssm
+        c_type=0,  # compute type, 0: ssm, 1: linear layer
         e_type=0,
-        f_type=0,
+        o_type=0,
+        o_learned=True,
         s_type=0,
-        f_learned=True,
+        t_type=0,  # transform(act function) type
         ssm_dim=16,
         tau=16,
-        t_type=0,  # transform type
         use_tau=True,
         **kwargs,
     ):
@@ -33,9 +33,9 @@ class EOS(nn.Module):
 
         self.c_type = c_type
         self.e_type = e_type
-        self.f_type = f_type
+        self.o_type = o_type
         self.s_type = s_type
-        self.f_learned = f_learned
+        self.o_learned = o_learned
         self.t_type = t_type
 
         self.i_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
@@ -52,83 +52,83 @@ class EOS(nn.Module):
                 )
 
             ##### forget
-            if self.f_type == 0:
-                if self.f_learned:
-                    f = torch.randn(expand_dim, embed_dim) * 0.1
+            if self.o_type == 0:
+                if self.o_learned:
+                    o = torch.randn(expand_dim, embed_dim) * 0.1
                 else:
-                    f = self._build_slope_tensor(expand_dim * embed_dim).reshape(
+                    o = self._build_slope_tensor(expand_dim * embed_dim).reshape(
                         expand_dim, -1
                     )
                 # k d
-                self.f = nn.Parameter(f, requires_grad=f_learned)
-            elif self.f_type == 1:  # data dependent
+                self.o = nn.Parameter(o, requires_grad=o_learned)
+            elif self.o_type == 1:  # data dependent
                 # d, k -> k d
-                self.f1_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-                self.f2_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                self.o1_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+                self.o2_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
                 if not self.use_tau:
-                    self.gamma_f1 = nn.Parameter(
+                    self.gamma_o1 = nn.Parameter(
                         self._build_slope_tensor(embed_dim), requires_grad=False
                     )
-                    self.gamma_f2 = nn.Parameter(
+                    self.gamma_o2 = nn.Parameter(
                         self._build_slope_tensor(expand_dim), requires_grad=False
                     )
-            elif self.f_type == 2:
+            elif self.o_type == 2:
                 # 1 d
-                self.f_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+                self.o_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
                 if not self.use_tau:
-                    self.gamma_f = nn.Parameter(
+                    self.gamma_o = nn.Parameter(
                         self._build_slope_tensor(embed_dim), requires_grad=False
                     )
-            elif self.f_type == 3:
+            elif self.o_type == 3:
                 # k 1
-                self.f_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                self.o_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
                 if not self.use_tau:
-                    self.gamma_f = nn.Parameter(
+                    self.gamma_o = nn.Parameter(
                         self._build_slope_tensor(expand_dim), requires_grad=False
                     )
-            elif self.f_type == 4:  # data independent
-                if self.f_learned:
-                    f = torch.randn(expand_dim) * 0.1
+            elif self.o_type == 4:  # data independent
+                if self.o_learned:
+                    o = torch.randn(expand_dim) * 0.1
                 else:
-                    f = self._build_slope_tensor(expand_dim)
+                    o = self._build_slope_tensor(expand_dim)
                 # k 1
-                self.f = nn.Parameter(f, requires_grad=self.f_learned)
-            elif self.f_type == 5:
-                if self.f_learned:
-                    f = torch.randn(embed_dim) * 0.1
+                self.o = nn.Parameter(o, requires_grad=self.o_learned)
+            elif self.o_type == 5:
+                if self.o_learned:
+                    o = torch.randn(embed_dim) * 0.1
                 else:
-                    f = self._build_slope_tensor(embed_dim)
+                    o = self._build_slope_tensor(embed_dim)
                 # 1 d
-                self.f = nn.Parameter(torch.randn(embed_dim) * 0.1, requires_grad=True)
-            elif self.f_type == 6:  # data independent + data dependent
+                self.o = nn.Parameter(o, requires_grad=True)
+            elif self.o_type == 6:  # data independent + data dependent
                 # k, k d -> k d
-                self.f_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
-                self.f = nn.Parameter(
+                self.o_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                self.o = nn.Parameter(
                     torch.randn(expand_dim, embed_dim) * 0.1, requires_grad=True
                 )
-            elif self.f_type == 7:
+            elif self.o_type == 7:
                 # d, k d -> k d
-                self.f_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-                self.f = nn.Parameter(
+                self.o_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+                self.o = nn.Parameter(
                     torch.randn(expand_dim, embed_dim) * 0.1, requires_grad=True
                 )
-            elif self.f_type == 8:
+            elif self.o_type == 8:
                 # d, k -> k d
-                self.f_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
-                self.f = nn.Parameter(torch.randn(expand_dim) * 0.1, requires_grad=True)
-            elif self.f_type == 9:
+                self.o_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+                self.o = nn.Parameter(torch.randn(expand_dim) * 0.1, requires_grad=True)
+            elif self.o_type == 9:
                 # k, d -> k d
-                self.f_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
-                self.f = nn.Parameter(torch.randn(embed_dim) * 0.1, requires_grad=True)
-            elif self.f_type == 10:
+                self.o_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                self.o = nn.Parameter(torch.randn(embed_dim) * 0.1, requires_grad=True)
+            elif self.o_type == 10:
                 # no learn
-                self.f = nn.Parameter(
+                self.o = nn.Parameter(
                     torch.ones(expand_dim, embed_dim), requires_grad=False
                 )
-            elif self.f_type == 11:
+            elif self.o_type == 11:
                 assert self.e_type == 1 and self.s_type == 1
                 # complex
-                self.f = nn.Parameter(
+                self.o = nn.Parameter(
                     torch.ones(expand_dim * 2, embed_dim), requires_grad=False
                 )
                 theta = 10000 ** (-2 / embed_dim * torch.arange(expand_dim)).reshape(
@@ -136,10 +136,10 @@ class EOS(nn.Module):
                 )
                 self.theta = nn.Parameter(theta, requires_grad=False)
                 self.theta_cache = torch.empty(0)
-            elif self.f_type == 12:
+            elif self.o_type == 12:
                 # cum softmax
                 assert self.e_type == 1 and self.s_type == 1
-                self.f_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
+                self.o_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
 
             ##### shrink
             if self.s_type == 1:
@@ -154,14 +154,14 @@ class EOS(nn.Module):
                 nn.Linear(ssm_dim, embed_dim, bias=bias),
             )
 
-            f = repeat(torch.arange(1, expand_dim + 1), "k -> k d", d=embed_dim)
-            self.f = nn.Parameter(torch.log(f))
+            o = repeat(torch.arange(1, expand_dim + 1), "k -> k d", d=embed_dim)
+            self.o = nn.Parameter(torch.log(o))
 
             self.e_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
             self.s_proj = nn.Linear(embed_dim, expand_dim, bias=bias)
 
         self.norm = nn.LayerNorm(embed_dim)
-        self.o_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
+        self.output_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
 
     @staticmethod
     def _build_slope_tensor(d: int):
@@ -228,80 +228,80 @@ class EOS(nn.Module):
             e = self.transform(e)
             s = self.transform(s)
 
-            if self.f_type == 0:
+            if self.o_type == 0:
                 # k d
-                if self.f_learned:
+                if self.o_learned:
                     if self.use_tau:
-                        f = F.logsigmoid(self.f) / self.tau
+                        o = F.logsigmoid(self.o) / self.tau
                     else:
-                        f = -self.f
+                        o = -self.o
                 else:
-                    f = -self.f
-                f = torch.exp(f)
+                    o = -self.o
+                o = torch.exp(o)
 
-            elif self.f_type == 1:
+            elif self.o_type == 1:
                 # d, k -> k d
                 if self.use_tau:
-                    f1 = F.logsigmoid(self.f1_proj(x)) / self.tau
-                    f2 = F.logsigmoid(self.f2_proj(x)) / self.tau
+                    o1 = F.logsigmoid(self.o1_proj(x)) / self.tau
+                    o2 = F.logsigmoid(self.o2_proj(x)) / self.tau
                 else:
-                    f1 = F.sigmoid(self.f1_proj(x)) * self.gamma_f1
-                    f2 = F.sigmoid(self.f2_proj(x)) * self.gamma_f2
+                    o1 = F.sigmoid(self.o1_proj(x)) * self.gamma_o1
+                    o2 = F.sigmoid(self.o2_proj(x)) * self.gamma_o2
                 # ... d, ... k -> ... k d
-                f = torch.exp(f1.unsqueeze(-2) + f2.unsqueeze(-1))
-            elif self.f_type == 2:
+                o = torch.exp(o1.unsqueeze(-2) + o2.unsqueeze(-1))
+            elif self.o_type == 2:
                 # 1 d
                 if self.use_tau:
-                    f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
+                    o = torch.exp(o.logsigmoid(self.o_proj(x)) / self.tau)
                 else:
-                    f = torch.exp(F.sigmoid(self.f_proj(x)) * self.gamma_f)
-                f = repeat(f, "... d -> ... k d", k=k)
-            elif self.f_type == 3:
+                    o = torch.exp(o.sigmoid(self.o_proj(x)) * self.gamma_f)
+                o = repeat(o, "... d -> ... k d", k=k)
+            elif self.o_type == 3:
                 # k 1
                 if self.use_tau:
-                    f = torch.exp(F.logsigmoid(self.f_proj(x)) / self.tau)
+                    o = torch.exp(o.logsigmoid(self.o_proj(x)) / self.tau)
                 else:
-                    f = torch.exp(F.sigmoid(self.f_proj(x)) * self.gamma_f)
-                f = repeat(f, "... k -> ... k d", d=d)
-                # f = repeat(f, "... -> b n ...", b=b, n=n)
-            elif self.f_type == 4:  # data independent
+                    o = torch.exp(o.sigmoid(self.o_proj(x)) * self.gamma_f)
+                o = repeat(o, "... k -> ... k d", d=d)
+                # o = repeat(o, "... -> b n ...", b=b, n=n)
+            elif self.o_type == 4:  # data independent
                 # k
-                if self.f_learned:
-                    f = F.logsigmoid(self.f) / self.tau
+                if self.o_learned:
+                    o = F.logsigmoid(self.o) / self.tau
                 else:
-                    f = self.f
-                f = torch.exp(f)
-                # f = repeat(f, "k -> b n k d", b=b, n=n, d=d)
-                f = repeat(f, "k -> k d", d=d)
-            elif self.f_type == 5:
+                    o = self.o
+                o = torch.exp(o)
+                # o = repeat(o, "k -> b n k d", b=b, n=n, d=d)
+                o = repeat(o, "k -> k d", d=d)
+            elif self.o_type == 5:
                 # d
-                if self.f_learned:
-                    f = F.logsigmoid(self.f) / self.tau
+                if self.o_learned:
+                    o = F.logsigmoid(self.o) / self.tau
                 else:
-                    f = self.f
-                f = torch.exp(f)
-                # f = repeat(f, "d -> b n k d", b=b, n=n, k=k)
-                f = repeat(f, "d -> k d", k=k)
-            elif self.f_type == 6:
+                    o = self.o
+                o = torch.exp(o)
+                # o = repeat(o, "d -> b n k d", b=b, n=n, k=k)
+                o = repeat(o, "d -> k d", k=k)
+            elif self.o_type == 6:
                 # k, k d -> k d
-                f = torch.einsum("... k, ... k d -> ... k d", self.f_proj(x), self.f)
-                f = torch.exp(F.logsigmoid(f) / self.tau)
-            elif self.f_type == 7:
+                o = torch.einsum("... k, ... k d -> ... k d", self.o_proj(x), self.o)
+                o = torch.exp(o.logsigmoid(o) / self.tau)
+            elif self.o_type == 7:
                 # d, k d -> k d
-                f = torch.einsum("... d, ... k d -> ... k d", self.f_proj(x), self.f)
-                f = torch.exp(F.logsigmoid(f) / self.tau)
-            elif self.f_type == 8:
+                o = torch.einsum("... d, ... k d -> ... k d", self.o_proj(x), self.o)
+                o = torch.exp(o.logsigmoid(o) / self.tau)
+            elif self.o_type == 8:
                 # d, k -> k d
-                f = torch.einsum("... d, ... k -> ... k d", self.f_proj(x), self.f)
-                f = torch.exp(F.logsigmoid(f) / self.tau)
-            elif self.f_type == 9:
+                o = torch.einsum("... d, ... k -> ... k d", self.o_proj(x), self.o)
+                o = torch.exp(o.logsigmoid(o) / self.tau)
+            elif self.o_type == 9:
                 # k, d -> k d
-                f = torch.einsum("... k, ... d -> ... k d", self.f_proj(x), self.f)
-                f = torch.exp(F.logsigmoid(f) / self.tau)
-            elif self.f_type == 10:
+                o = torch.einsum("... k, ... d -> ... k d", self.o_proj(x), self.o)
+                o = torch.exp(o.logsigmoid(o) / self.tau)
+            elif self.o_type == 10:
                 # no f
-                f = self.f
-            elif self.f_type == 11:
+                o = self.o
+            elif self.o_type == 11:
                 # complex
                 if self.theta_cache.shape[0] == 0:
                     b, n, d = x.shape
@@ -316,17 +316,17 @@ class EOS(nn.Module):
                 s = torch.cat([s * torch.cos(theta), s * torch.sin(theta)], dim=-1).to(
                     x.dtype
                 )
-                f = self.f
-            elif self.f_type == 12:
+                o = self.o
+            elif self.o_type == 12:
                 # cum softmax
-                f_ = torch.clamp(self.f_proj(x), min=-10, max=10).to(torch.float32)
+                f_ = torch.clamp(self.o_proj(x), min=-10, max=10).to(torch.float32)
                 f_logexpcumsum = torch.cat(
                     [-1e5 * torch.ones(b, 1, k).to(x), torch.logcumsumexp(f_, dim=1)],
                     dim=1,
                 )
-                f = torch.exp(f_logexpcumsum[:, :n] - f_logexpcumsum[:, 1:])
+                o = torch.exp(f_logexpcumsum[:, :n] - f_logexpcumsum[:, 1:])
                 e = (1 - f) * e
-                f = repeat(f, "... k -> ... k d", d=d)
+                o = repeat(o, "... k -> ... k d", d=d)
                 i = i.to(torch.float32)
                 s = s.to(torch.float32)
         else:
@@ -334,8 +334,8 @@ class EOS(nn.Module):
             inter_state = F.softplus(self.inter_proj(x))
             i = inter_state * i
             # k d
-            f_di = -torch.exp(self.f.float())
-            f = torch.exp(torch.einsum("... d, ... k d -> ... k d", inter_state, f_di))
+            f_di = -torch.exp(self.o.float())
+            o = torch.exp(torch.einsum("... d, ... k d -> ... k d", inter_state, f_di))
             # b n k
             e = self.e_proj(x)
             # b n k
@@ -348,10 +348,10 @@ class EOS(nn.Module):
 
     def forward(self, x):
         i, e, f, s = self.prepare(x)
-        o = pscan_cuda_fn(i, e, f, s).to(x.dtype)
+        y = pscan_cuda_fn(i, e, f, s).to(x.dtype)
 
-        o = self.norm(o)
+        y = self.norm(y)
 
-        o = self.o_proj(o)
+        y = self.output_proj(y)
 
-        return o
+        return y

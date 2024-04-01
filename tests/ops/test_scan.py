@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from mnet_pytorch.ops import (
+from lcsm_pytorch.ops import (
     expand_and_shrink,
     pscan,
     pscan_block,

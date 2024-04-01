@@ -1,9 +1,9 @@
 import torch
 from einops import rearrange
+from mnet_pytorch.utils import is_dependent
 from torch.autograd import Function
 
 import pscan_cuda
-from mnet_pytorch.utils import is_dependent
 
 
 class ScanCuda(Function):

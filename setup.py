@@ -15,7 +15,7 @@ def get_gpu_arch_flags():
 arch_flags = get_gpu_arch_flags()
 
 setup(
-    name="mnet_pytorch",
+    name="lcsm_pytorch",
     packages=find_packages(
         exclude=[
             "tests",
@@ -26,8 +26,8 @@ setup(
         CUDAExtension(
             "pscan_cuda",
             sources=[
-                "mnet_pytorch/ops/cuda/pscan_cuda_kernel.cu",
-                "mnet_pytorch/ops/cuda/pscan_cuda.cpp",
+                "lcsm_pytorch/ops/cuda/pscan_cuda_kernel.cu",
+                "lcsm_pytorch/ops/cuda/pscan_cuda.cpp",
             ],
             extra_compile_args={
                 "cxx": ["-O2", "-std=c++14", "-D_GLIBCXX_USE_CXX11_ABI=0"],

@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 import triton
 
-from mnet_pytorch.ops import (
+from lcsm_pytorch.ops import (
     expand_and_shrink,
     pscan,
     pscan_block,

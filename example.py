@@ -1,5 +1,5 @@
-from mnet_pytorch import EOS
+from lcsm_pytorch import EosLayer
 
-eos = EOS()
+eos = EosLayer()
 
 print(eos)
