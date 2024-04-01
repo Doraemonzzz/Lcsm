@@ -1,22 +1,22 @@
 import torch
 from einops import rearrange
-from mnet_pytorch.utils import is_dependent
 from torch.autograd import Function
 
 import pscan_cuda
+from lcsm_pytorch.utils import is_dependent
 
 
 class ScanCuda(Function):
     @staticmethod
-    def forward(ctx, i, e, f, s):
+    def forward(ctx, i, e, o, s):
         # i: b, n, d
         # e: b, n, k or k or k, d
-        # f: b, n, k, d or k, d
+        # o: b, n, k, d or k, d
         # s: b, n, k or k or k, d
 
         i = i.contiguous()
         e = e.to(i.dtype).contiguous()
-        f = f.to(i.dtype).contiguous()
+        o = o.to(i.dtype).contiguous()
         s = s.to(i.dtype).contiguous()
 
         b, n, d = i.shape
@@ -38,17 +38,17 @@ class ScanCuda(Function):
             # k d, b n 1 d -> b n k d
             input = e * i.unsqueeze(-2)
 
-        decay = f
+        o_state = f
 
         is_fdd = is_dependent(f)
 
-        input, decay = map(
-            lambda x: rearrange(x, "... k d -> ... (k d)"), [input, decay]
+        input, o_state = map(
+            lambda x: rearrange(x, "... k d -> ... (k d)"), [input, o_state]
         )
         input = input.contiguous()
-        decay = decay.contiguous()
+        o_state = o_state.contiguous()
 
-        m = pscan_cuda.forward(input, decay.to(input.dtype), is_fdd)
+        m = pscan_cuda.forward(input, o_state.to(input.dtype), is_fdd)
 
         m = rearrange(m, "... (k d) -> ... k d", k=k)
 
@@ -63,14 +63,14 @@ class ScanCuda(Function):
             output = (m * s).sum(dim=-2)
         # output = torch.einsum("... k d, ... k -> ... d", m, s)
 
-        ctx.save_for_backward(i, e, f, s, m.to(i.dtype))
+        ctx.save_for_backward(i, e, o, s, m.to(i.dtype))
 
         return output
 
     @staticmethod
-    def backward(ctx, do):
-        i, e, f, s, m = ctx.saved_tensors
-        do = do.contiguous().to(i.dtype)
+    def backward(ctx, dy):
+        i, e, o, s, m = ctx.saved_tensors
+        dy = dy.contiguous().to(i.dtype)
 
         b, n, d = i.shape
         if len(e.shape) != 2:
@@ -82,7 +82,7 @@ class ScanCuda(Function):
         learned = f.requires_grad
 
         # input = torch.einsum("... k, ... d -> ... k d", e, i)
-        # grad = torch.einsum("... k, ... d -> ... k d", s, do)
+        # grad = torch.einsum("... k, ... d -> ... k d", s, dy)
 
         if len(e.shape) != 2:
             # e:
@@ -103,32 +103,32 @@ class ScanCuda(Function):
             # i:
             # b n d -> b n 1 d
             # ... k 1, b n 1 d -> b n k d
-            grad = s.unsqueeze(-1) * do.unsqueeze(-2)
+            grad = s.unsqueeze(-1) * dy.unsqueeze(-2)
         else:
             # k d, b n 1 d -> b n k d
-            grad = s * do.unsqueeze(-2)
+            grad = s * dy.unsqueeze(-2)
 
-        decay = f
+        o_state = o
 
-        input, decay = map(
-            lambda x: rearrange(x, "... k d -> ... (k d)"), [input, decay]
+        input, o_state = map(
+            lambda x: rearrange(x, "... k d -> ... (k d)"), [input, o_state]
         )
         input = input.contiguous()
-        decay = decay.contiguous()
+        o_state = o_state.contiguous()
 
-        dm, df = pscan_cuda.backward(
-            input, decay.to(input.dtype), m, grad.to(input.dtype), is_fdd, learned
+        dm, do = pscan_cuda.backward(
+            input, o_state.to(input.dtype), m, grad.to(input.dtype), is_fdd, learned
         )
 
-        dm, df = map(lambda x: rearrange(x, "... (k d) -> ... k d", k=k), [dm, df])
+        dm, do = map(lambda x: rearrange(x, "... (k d) -> ... k d", k=k), [dm, do])
 
         dm = dm.to(i.dtype)
-        df = df.to(i.dtype)
+        do = do.to(i.dtype)
 
         if len(s.shape) != 2:
-            ds = torch.einsum("... k d, ... d -> ... k", m, do)
+            ds = torch.einsum("... k d, ... d -> ... k", m, dy)
         else:
-            ds = torch.einsum("... k d, ... d -> ... k d", m, do)
+            ds = torch.einsum("... k d, ... d -> ... k d", m, dy)
 
         if len(e.shape) != 2:
             de = torch.einsum("... k d, ... d -> ... k", dm, i)
@@ -147,7 +147,7 @@ class ScanCuda(Function):
             di = (dm * e).sum(dim=-2)
 
         if not is_dependent(f):
-            df = df.sum(0).sum(0)
+            do = do.sum(0).sum(0)
 
         if not is_dependent(s):
             ds = ds.sum(0).sum(0)
@@ -156,9 +156,9 @@ class ScanCuda(Function):
             de = de.sum(0).sum(0)
 
         if not learned:
-            df = None
+            do = None
 
-        return di, de, df, ds
+        return di, de, do, ds
 
 
 pscan_cuda_fn = ScanCuda.apply

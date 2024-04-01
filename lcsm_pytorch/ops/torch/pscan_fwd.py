@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
-from mnet_pytorch.utils import complex_log, is_dependent
+
+from lcsm_pytorch.utils import complex_log, is_dependent
 
 
 def pscan(i, e, f, s, m0=None):

@@ -1,5 +1,6 @@
 import torch
-from mnet_pytorch.utils import process
+
+from lcsm_pytorch.utils import process
 
 
 def expand_and_shrink(i, e, f, s, m0=None):
